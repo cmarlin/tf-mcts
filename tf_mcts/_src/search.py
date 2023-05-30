@@ -17,9 +17,9 @@ from typing import Any, NamedTuple, Optional, Tuple, TypeVar
 
 import tensorflow as tf
 
-from mctx._src import action_selection
-from mctx._src import base
-from mctx._src import tree as tree_lib
+from tf_mcts._src import action_selection
+from tf_mcts._src import base
+from tf_mcts._src import tree as tree_lib
 
 Tree = tree_lib.Tree
 T = TypeVar('T')
@@ -76,7 +76,6 @@ def search(
   )
 
   # Do simulation, expansion, and backward steps.
-  batch_size = root.value.shape[0]
   if max_depth is None:
     max_depth = num_simulations
   if invalid_actions is None:

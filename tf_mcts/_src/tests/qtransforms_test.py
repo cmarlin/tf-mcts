@@ -17,7 +17,7 @@ from absl.testing import absltest
 import tensorflow as tf
 import numpy as np
 import os
-from mctx._src import qtransforms
+from tf_mcts._src import qtransforms
 
 
 class QtransformsTest(absltest.TestCase):

@@ -19,9 +19,9 @@ from absl.testing import absltest
 import numpy as np
 import os
 import tensorflow as tf
-import mctx
-from mctx._src import policies
-from mctx._src import tree as tree_lib
+import tf_mcts
+from tf_mcts._src import policies
+from tf_mcts._src import tree as tree_lib
 
 
 def _make_bandit_recurrent_fn(rewards, dummy_embedding=()):
@@ -30,7 +30,7 @@ def _make_bandit_recurrent_fn(rewards, dummy_embedding=()):
   def recurrent_fn(params, rng_key, action, embedding):
     del params, rng_key, embedding
     reward = tf.gather(rewards, action, axis=1, batch_dims=1)
-    return mctx.RecurrentFnOutput(
+    return tf_mcts.RecurrentFnOutput(
         reward=reward,
         discount=tf.zeros_like(reward),
         prior_logits=tf.zeros_like(rewards),
@@ -57,7 +57,7 @@ def _make_bandit_decision_and_chance_fns(rewards, num_chance_outcomes):
         tf.ones([batch_size])
         )
     afterstate_embedding = (action, embedding)
-    return mctx.DecisionRecurrentFnOutput(
+    return tf_mcts.DecisionRecurrentFnOutput(
         chance_logits=dummy_chance_logits,
         afterstate_value=tf.zeros_like(reward)), afterstate_embedding
 
@@ -67,7 +67,7 @@ def _make_bandit_decision_and_chance_fns(rewards, num_chance_outcomes):
     afterstate_action, embedding = afterstate_embedding
 
     reward = tf.gather(rewards, afterstate_action, axis=1, batch_dims=1)
-    return mctx.ChanceRecurrentFnOutput(
+    return tf_mcts.ChanceRecurrentFnOutput(
         action_logits=tf.zeros_like(rewards),
         value=tf.zeros_like(reward),
         discount=tf.zeros_like(reward),
@@ -168,7 +168,7 @@ class PoliciesTest(absltest.TestCase):
         tf.nn.softmax(masked_logits))
 
   def test_muzero_policy(self):
-    root = mctx.RootFnOutput(
+    root = tf_mcts.RootFnOutput(
         prior_logits=tf.convert_to_tensor([
             [-1.0, 0.0, 2.0, 3.0],
         ]),
@@ -180,7 +180,7 @@ class PoliciesTest(absltest.TestCase):
         [False, False, False, True],
     ])
 
-    policy_output = mctx.muzero_policy(
+    policy_output = tf_mcts.muzero_policy(
         params=(),
         rng_key=tf.convert_to_tensor([0, 0]),
         root=root,
@@ -198,7 +198,7 @@ class PoliciesTest(absltest.TestCase):
 
   def test_gumbel_muzero_policy(self):
     root_value = tf.convert_to_tensor([-5.0])
-    root = mctx.RootFnOutput(
+    root = tf_mcts.RootFnOutput(
         prior_logits=tf.convert_to_tensor([
             [0.0, -1.0, 2.0, 3.0],
         ]),
@@ -217,11 +217,11 @@ class PoliciesTest(absltest.TestCase):
     num_simulations = 17
     max_depth = 3
     qtransform = functools.partial(
-        mctx.qtransform_completed_by_mix_value,
+        tf_mcts.qtransform_completed_by_mix_value,
         value_scale=value_scale,
         maxvisit_init=maxvisit_init,
         rescale_values=True)
-    policy_output = mctx.gumbel_muzero_policy(
+    policy_output = tf_mcts.gumbel_muzero_policy(
         params=(),
         rng_key=tf.convert_to_tensor([42, 42]),
         root=root,
@@ -273,7 +273,7 @@ class PoliciesTest(absltest.TestCase):
 
   def test_gumbel_muzero_policy_without_invalid_actions(self):
     root_value = tf.convert_to_tensor([-5.0])
-    root = mctx.RootFnOutput(
+    root = tf_mcts.RootFnOutput(
         prior_logits=tf.convert_to_tensor([
             [0.0, -1.0, 2.0, 3.0],
         ]),
@@ -289,11 +289,11 @@ class PoliciesTest(absltest.TestCase):
     num_simulations = 17
     max_depth = 3
     qtransform = functools.partial(
-        mctx.qtransform_completed_by_mix_value,
+        tf_mcts.qtransform_completed_by_mix_value,
         value_scale=value_scale,
         maxvisit_init=maxvisit_init,
         rescale_values=True)
-    policy_output = mctx.gumbel_muzero_policy(
+    policy_output = tf_mcts.gumbel_muzero_policy(
         params=(),
         rng_key=tf.convert_to_tensor([0, 42]),
         root=root,
@@ -329,7 +329,7 @@ class PoliciesTest(absltest.TestCase):
 
   def test_stochastic_muzero_policy(self):
     """Tests that SMZ is equivalent to MZ with a dummy chance function."""
-    root = mctx.RootFnOutput(
+    root = tf_mcts.RootFnOutput(
         prior_logits=tf.convert_to_tensor([
             [-1.0, 0.0, 2.0, 3.0],
             [0.0, 2.0, 5.0, -4.0],
@@ -345,7 +345,7 @@ class PoliciesTest(absltest.TestCase):
 
     num_simulations = 10
 
-    policy_output = mctx.muzero_policy(
+    policy_output = tf_mcts.muzero_policy(
         params=(),
         rng_key=tf.convert_to_tensor([0, 42]),
         root=root,
@@ -361,7 +361,7 @@ class PoliciesTest(absltest.TestCase):
     decision_rec_fn, chance_rec_fn = _make_bandit_decision_and_chance_fns(
         rewards, num_chance_outcomes)
 
-    stochastic_policy_output = mctx.stochastic_muzero_policy(
+    stochastic_policy_output = tf_mcts.stochastic_muzero_policy(
         params=(),
         rng_key=tf.convert_to_tensor([0, 42]),
         root=root,

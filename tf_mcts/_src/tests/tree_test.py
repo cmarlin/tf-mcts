@@ -24,7 +24,7 @@ from absl.testing import parameterized
 import tensorflow as tf
 import numpy as np
 
-import mctx
+import tf_mcts
 
 
 def _prepare_root(batch_size, num_actions):
@@ -42,7 +42,7 @@ def _prepare_root(batch_size, num_actions):
     _produce_prediction_output,
     num_actions=num_actions
     )(embedding)
-  return mctx.RootFnOutput(
+  return tf_mcts.RootFnOutput(
       prior_logits=output["policy_logits"],
       value=output["value"],
       embedding=embedding,
@@ -106,7 +106,7 @@ def _prepare_recurrent_fn(num_actions, *, discount, zero_reward):
     reward = output["reward"]
     if zero_reward:
       reward = tf.zeros_like(reward)
-    return mctx.RecurrentFnOutput(
+    return tf_mcts.RecurrentFnOutput(
         reward=reward,
         discount=tf.fill(tf.shape(reward), discount),
         prior_logits=output["policy_logits"],
@@ -130,7 +130,7 @@ def _fold_action_in(params, num_actions):
   return tf.gather(sub_rngs, action, axis=1, batch_dims=1)
 
 
-def tree_to_pytree(tree: mctx.Tree, batch_i: int = 0):
+def tree_to_pytree(tree: tf_mcts.Tree, batch_i: int = 0):
   """Converts the MCTS tree to nested dicts."""
   nodes = {}
   nodes[0] = _create_pynode(
@@ -205,13 +205,13 @@ class TreeTest(parameterized.TestCase):
   # pylint: disable=line-too-long
   @parameterized.named_parameters(
       ("muzero_norescale",
-       "../mctx/_src/tests/test_data/muzero_tree.json"),
+       "../tf_mcts/_src/tests/test_data/muzero_tree.json"),
       ("muzero_qtransform",
-       "../mctx/_src/tests/test_data/muzero_qtransform_tree.json"),
+       "../tf_mcts/_src/tests/test_data/muzero_qtransform_tree.json"),
       ("gumbel_muzero_norescale",
-       "../mctx/_src/tests/test_data/gumbel_muzero_tree.json"),
+       "../tf_mcts/_src/tests/test_data/gumbel_muzero_tree.json"),
       ("gumbel_muzero_reward",
-       "../mctx/_src/tests/test_data/gumbel_muzero_reward_tree.json")
+       "../tf_mcts/_src/tests/test_data/gumbel_muzero_reward_tree.json")
       )
   # pylint: enable=line-too-long
   def test_tree(self, tree_data_path):
@@ -223,8 +223,8 @@ class TreeTest(parameterized.TestCase):
   def _reproduce_tree(self, tree):
     """Reproduces the given JSON tree by running a search."""
     policy_fn = dict(
-        gumbel_muzero=mctx.gumbel_muzero_policy,
-        muzero=mctx.muzero_policy,
+        gumbel_muzero=tf_mcts.gumbel_muzero_policy,
+        muzero=tf_mcts.muzero_policy,
     )[tree["algorithm"]]
 
     env_config = tree["env_config"]
@@ -232,7 +232,7 @@ class TreeTest(parameterized.TestCase):
     num_actions = len(root["child_stats"])
     num_simulations = root["visit"] - 1
     qtransform = functools.partial(
-        getattr(mctx, tree["algorithm_config"].pop("qtransform")),
+        getattr(tf_mcts, tree["algorithm_config"].pop("qtransform")),
         **tree["algorithm_config"].pop("qtransform_kwargs", {}))
 
     batch_size = 3

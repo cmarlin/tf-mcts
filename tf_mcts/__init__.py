@@ -12,30 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""mctx: Monte Carlo tree search in Tensorflow."""
+"""tf_mcts: Monte Carlo tree search in Tensorflow."""
 
-from mctx._src.action_selection import gumbel_muzero_interior_action_selection
-from mctx._src.action_selection import gumbel_muzero_root_action_selection
-from mctx._src.action_selection import GumbelMuZeroExtraData
-from mctx._src.action_selection import muzero_action_selection
-from mctx._src.base import ChanceRecurrentFnOutput
-from mctx._src.base import DecisionRecurrentFnOutput
-from mctx._src.base import InteriorActionSelectionFn
-from mctx._src.base import LoopFn
-from mctx._src.base import PolicyOutput
-from mctx._src.base import RecurrentFn
-from mctx._src.base import RecurrentFnOutput
-from mctx._src.base import RecurrentState
-from mctx._src.base import RootActionSelectionFn
-from mctx._src.base import RootFnOutput
-from mctx._src.policies import gumbel_muzero_policy
-from mctx._src.policies import muzero_policy
-from mctx._src.policies import stochastic_muzero_policy
-from mctx._src.qtransforms import qtransform_by_min_max
-from mctx._src.qtransforms import qtransform_by_parent_and_siblings
-from mctx._src.qtransforms import qtransform_completed_by_mix_value
-from mctx._src.search import search
-from mctx._src.tree import Tree
+from tf_mcts._src.action_selection import gumbel_muzero_interior_action_selection
+from tf_mcts._src.action_selection import gumbel_muzero_root_action_selection
+from tf_mcts._src.action_selection import GumbelMuZeroExtraData
+from tf_mcts._src.action_selection import muzero_action_selection
+from tf_mcts._src.base import ChanceRecurrentFnOutput
+from tf_mcts._src.base import DecisionRecurrentFnOutput
+from tf_mcts._src.base import InteriorActionSelectionFn
+from tf_mcts._src.base import LoopFn
+from tf_mcts._src.base import PolicyOutput
+from tf_mcts._src.base import RecurrentFn
+from tf_mcts._src.base import RecurrentFnOutput
+from tf_mcts._src.base import RecurrentState
+from tf_mcts._src.base import RootActionSelectionFn
+from tf_mcts._src.base import RootFnOutput
+from tf_mcts._src.policies import gumbel_muzero_policy
+from tf_mcts._src.policies import muzero_policy
+from tf_mcts._src.policies import stochastic_muzero_policy
+from tf_mcts._src.qtransforms import qtransform_by_min_max
+from tf_mcts._src.qtransforms import qtransform_by_parent_and_siblings
+from tf_mcts._src.qtransforms import qtransform_completed_by_mix_value
+from tf_mcts._src.search import search
+from tf_mcts._src.tree import Tree
 
 __version__ = "0.0.1"
 
@@ -66,7 +66,7 @@ __all__ = (
 
 #  _________________________________________
 # / Please don't use symbols in `_src` they \
-# \ are not part of the Mctx public API.    /
+# \ are not part of the tf_mcts public API.    /
 #  -----------------------------------------
 #         \   ^__^
 #          \  (oo)\_______

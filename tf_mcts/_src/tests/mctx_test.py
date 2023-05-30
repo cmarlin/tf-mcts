@@ -12,24 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for Mctx."""
+"""Tests for TfMcts."""
 
 from absl.testing import absltest
-import mctx
+import tf_mcts
 
 
-class MctxTest(absltest.TestCase):
-  """Test mctx can be imported correctly."""
+class TfMctsTest(absltest.TestCase):
+  """Test tf_mcts can be imported correctly."""
 
   def test_import(self):
-    self.assertTrue(hasattr(mctx, "gumbel_muzero_policy"))
-    self.assertTrue(hasattr(mctx, "muzero_policy"))
-    self.assertTrue(hasattr(mctx, "qtransform_by_min_max"))
-    self.assertTrue(hasattr(mctx, "qtransform_by_parent_and_siblings"))
-    self.assertTrue(hasattr(mctx, "qtransform_completed_by_mix_value"))
-    self.assertTrue(hasattr(mctx, "PolicyOutput"))
-    self.assertTrue(hasattr(mctx, "RootFnOutput"))
-    self.assertTrue(hasattr(mctx, "RecurrentFnOutput"))
+    self.assertTrue(hasattr(tf_mcts, "gumbel_muzero_policy"))
+    self.assertTrue(hasattr(tf_mcts, "muzero_policy"))
+    self.assertTrue(hasattr(tf_mcts, "qtransform_by_min_max"))
+    self.assertTrue(hasattr(tf_mcts, "qtransform_by_parent_and_siblings"))
+    self.assertTrue(hasattr(tf_mcts, "qtransform_completed_by_mix_value"))
+    self.assertTrue(hasattr(tf_mcts, "PolicyOutput"))
+    self.assertTrue(hasattr(tf_mcts, "RootFnOutput"))
+    self.assertTrue(hasattr(tf_mcts, "RecurrentFnOutput"))
 
 
 if __name__ == "__main__":
