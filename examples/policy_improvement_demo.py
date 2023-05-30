@@ -15,13 +15,11 @@
 """A demonstration of the policy improvement by planning with Gumbel."""
 
 import functools
-from typing import Tuple
+from typing import NamedTuple, Tuple
 
 from absl import app
 from absl import flags
-import chex
-import jax
-import jax.numpy as jnp
+import tensorflow as tf
 import mctx
 
 FLAGS = flags.FLAGS
@@ -34,29 +32,35 @@ flags.DEFINE_integer("max_num_considered_actions", 16,
 flags.DEFINE_integer("num_runs", 1, "Number of runs on random data.")
 
 
-@chex.dataclass(frozen=True)
-class DemoOutput:
-  prior_policy_value: chex.Array
-  prior_policy_action_value: chex.Array
-  selected_action_value: chex.Array
-  action_weights_policy_value: chex.Array
+class DemoOutput(NamedTuple):
+  prior_policy_value: tf.Tensor
+  prior_policy_action_value: tf.Tensor
+  selected_action_value: tf.Tensor
+  action_weights_policy_value: tf.Tensor
 
 
-def _run_demo(rng_key: chex.PRNGKey) -> Tuple[chex.PRNGKey, DemoOutput]:
+def _run_demo(
+    rng_key:'mctx.PRNGKey'
+  ) -> Tuple['mctx.PRNGKey', DemoOutput]:
   """Runs a search algorithm on random data."""
   batch_size = FLAGS.batch_size
-  rng_key, logits_rng, q_rng, search_rng = jax.random.split(rng_key, 4)
+  if int(tf.__version__.split('.')[1]) >= 12:
+    rng_key_ = tf.random.split(rng_key, 4)
+    rng_key, logits_rng, q_rng, search_rng = \
+      rng_key_[0], rng_key_[1], rng_key_[2], rng_key_[3]
+  else:
+    rng_key, logits_rng, q_rng, search_rng = rng_key, rng_key, rng_key, rng_key
   # We will demonstrate the algorithm on random prior_logits.
   # Normally, the prior_logits would be produced by a policy network.
-  prior_logits = jax.random.normal(
-      logits_rng, shape=[batch_size, FLAGS.num_actions])
+  prior_logits = tf.random.stateless_normal(
+      seed=logits_rng, shape=[batch_size, FLAGS.num_actions])
   # Defining a bandit with random Q-values. Only the Q-values of the visited
   # actions will be revealed to the search algorithm.
-  qvalues = jax.random.uniform(q_rng, shape=prior_logits.shape)
+  qvalues = tf.random.stateless_uniform(seed=q_rng, shape=prior_logits.shape)
   # If we know the value under the prior policy, we can use the value to
   # complete the missing Q-values. The completed Q-values will produce an
   # improved policy in `policy_output.action_weights`.
-  raw_value = jnp.sum(jax.nn.softmax(prior_logits) * qvalues, axis=-1)
+  raw_value = tf.reduce_sum(tf.nn.softmax(prior_logits) * qvalues, axis=-1)
   use_mixed_value = False
 
   # The root output would be the output of MuZero representation network.
@@ -64,7 +68,7 @@ def _run_demo(rng_key: chex.PRNGKey) -> Tuple[chex.PRNGKey, DemoOutput]:
       prior_logits=prior_logits,
       value=raw_value,
       # The embedding is used only to implement the MuZero model.
-      embedding=jnp.zeros([batch_size]),
+      embedding=tf.zeros([batch_size]),
   )
   # The recurrent_fn would be provided by MuZero dynamics network.
   recurrent_fn = _make_bandit_recurrent_fn(qvalues)
@@ -83,17 +87,16 @@ def _run_demo(rng_key: chex.PRNGKey) -> Tuple[chex.PRNGKey, DemoOutput]:
   )
 
   # Collecting the Q-value of the selected action.
-  selected_action_value = qvalues[jnp.arange(batch_size), policy_output.action]
+  selected_action_value = tf.gather(qvalues, indices=policy_output.action, axis=1, batch_dims=1)
 
   # We will compare the selected action to the action selected by the
   # prior policy, while using the same Gumbel random numbers.
   gumbel = policy_output.search_tree.extra_data.root_gumbel
-  prior_policy_action = jnp.argmax(gumbel + prior_logits, axis=-1)
-  prior_policy_action_value = qvalues[jnp.arange(batch_size),
-                                      prior_policy_action]
+  prior_policy_action = tf.argmax(gumbel + prior_logits, axis=-1)
+  prior_policy_action_value = tf.gather(qvalues, indices=prior_policy_action, axis=1, batch_dims=1)
 
   # Computing the policy value under the new action_weights.
-  action_weights_policy_value = jnp.sum(
+  action_weights_policy_value = tf.reduce_sum(
       policy_output.action_weights * qvalues, axis=-1)
 
   output = DemoOutput(
@@ -111,17 +114,17 @@ def _make_bandit_recurrent_fn(qvalues):
   def recurrent_fn(params, rng_key, action, embedding):
     del params, rng_key
     # For the bandit, the reward will be non-zero only at the root.
-    reward = jnp.where(embedding == 0,
-                       qvalues[jnp.arange(action.shape[0]), action],
+    reward = tf.where(embedding == 0,
+                       tf.gather(qvalues, indices=action, axis=1, batch_dims=1),
                        0.0)
     # On a single-player environment, use discount from [0, 1].
     # On a zero-sum self-play environment, use discount=-1.
-    discount = jnp.ones_like(reward)
+    discount = tf.ones_like(reward)
     recurrent_fn_output = mctx.RecurrentFnOutput(
         reward=reward,
         discount=discount,
-        prior_logits=jnp.zeros_like(qvalues),
-        value=jnp.zeros_like(reward))
+        prior_logits=tf.zeros_like(qvalues),
+        value=tf.zeros_like(reward))
     next_embedding = embedding + 1
     return recurrent_fn_output, next_embedding
 
@@ -129,8 +132,8 @@ def _make_bandit_recurrent_fn(qvalues):
 
 
 def main(_):
-  rng_key = jax.random.PRNGKey(FLAGS.seed)
-  jitted_run_demo = jax.jit(_run_demo)
+  rng_key = tf.convert_to_tensor([FLAGS.seed, FLAGS.seed])
+  jitted_run_demo = tf.function(_run_demo, jit_compile=True)
   for _ in range(FLAGS.num_runs):
     rng_key, output = jitted_run_demo(rng_key)
     # Printing the obtained increase of the policy value.
@@ -140,9 +143,9 @@ def main(_):
     weights_value_improvement = (
         output.action_weights_policy_value - output.prior_policy_value)
     print("action value improvement:         %.3f (min=%.3f)" %
-          (action_value_improvement.mean(), action_value_improvement.min()))
+          (tf.reduce_mean(action_value_improvement), tf.reduce_min(action_value_improvement)))
     print("action_weights value improvement: %.3f (min=%.3f)" %
-          (weights_value_improvement.mean(), weights_value_improvement.min()))
+          (tf.reduce_mean(weights_value_improvement), tf.reduce_min(weights_value_improvement)))
 
 
 if __name__ == "__main__":

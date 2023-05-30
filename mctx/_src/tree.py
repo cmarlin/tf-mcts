@@ -15,18 +15,29 @@
 """A data structure used to hold / inspect search data for a batch of inputs."""
 
 from __future__ import annotations
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, NamedTuple, TypeVar
 
-import chex
-import jax
-import jax.numpy as jnp
+import tensorflow as tf
 
 
 T = TypeVar("T")
 
+# service to mimic chex dataclass
+def namedtuple_replace(self: NamedTuple, **kwargs):
+  dict_self = dict(zip(self._fields, self))
+  for k, v in kwargs.items():
+    dict_self[k] = v
+  return self.__class__(**dict_self)
 
-@chex.dataclass(frozen=True)
-class Tree(Generic[T]):
+
+# The following attributes are class variables (and should not be set on
+# Tree instances).
+ROOT_INDEX: int = 0
+NO_PARENT: int = -1
+UNVISITED: int = -1
+
+
+class Tree(NamedTuple):  # Generic[T]
   """State of a search tree.
 
   The `Tree` dataclass is used to hold and inspect search data for a batch of
@@ -56,26 +67,26 @@ class Tree(Generic[T]):
     root. In the mask, invalid actions have ones, and valid actions have zeros.
   extra_data: `[B, ...]` extra data passed to the search.
   """
-  node_visits: chex.Array  # [B, N]
-  raw_values: chex.Array  # [B, N]
-  node_values: chex.Array  # [B, N]
-  parents: chex.Array  # [B, N]
-  action_from_parent: chex.Array  # [B, N]
-  children_index: chex.Array  # [B, N, num_actions]
-  children_prior_logits: chex.Array  # [B, N, num_actions]
-  children_visits: chex.Array  # [B, N, num_actions]
-  children_rewards: chex.Array  # [B, N, num_actions]
-  children_discounts: chex.Array  # [B, N, num_actions]
-  children_values: chex.Array  # [B, N, num_actions]
+  node_visits: tf.Tensor  # [B, N]
+  raw_values: tf.Tensor  # [B, N]
+  node_values: tf.Tensor  # [B, N]
+  parents: tf.Tensor  # [B, N]
+  action_from_parent: tf.Tensor  # [B, N]
+  children_index: tf.Tensor  # [B, N, num_actions]
+  children_prior_logits: tf.Tensor  # [B, N, num_actions]
+  children_visits: tf.Tensor  # [B, N, num_actions]
+  children_rewards: tf.Tensor  # [B, N, num_actions]
+  children_discounts: tf.Tensor  # [B, N, num_actions]
+  children_values: tf.Tensor  # [B, N, num_actions]
   embeddings: Any  # [B, N, ...]
-  root_invalid_actions: chex.Array  # [B, num_actions]
-  extra_data: T  # [B, ...]
+  root_invalid_actions: tf.Tensor  # [B, num_actions]
+  extra_data: Any  # T  # [B, ...]
 
   # The following attributes are class variables (and should not be set on
   # Tree instances).
-  ROOT_INDEX: ClassVar[int] = 0
-  NO_PARENT: ClassVar[int] = -1
-  UNVISITED: ClassVar[int] = -1
+  # ROOT_INDEX: ClassVar[int] = 0
+  # NO_PARENT: ClassVar[int] = -1
+  # UNVISITED: ClassVar[int] = -1
 
   @property
   def num_actions(self):
@@ -85,26 +96,26 @@ class Tree(Generic[T]):
   def num_simulations(self):
     return self.node_visits.shape[-1] - 1
 
-  def qvalues(self, indices):
+  def qvalues(self, indices:tf.Tensor):
     """Compute q-values for any node indices in the tree."""
-    if jnp.asarray(indices).shape:
-      return jax.vmap(_unbatched_qvalues)(self, indices)
-    else:
-      return _unbatched_qvalues(self, indices)
+    tf.debugging.assert_rank(self.children_discounts, 3)
+    return tf.gather(self.children_rewards, indices, axis=1, batch_dims=1) + \
+      tf.gather(self.children_discounts, indices, axis=1, batch_dims=1) * \
+        tf.gather(self.children_values, indices, axis=1, batch_dims=1)
 
   def summary(self) -> SearchSummary:
     """Extract summary statistics for the root node."""
     # Get state and action values for the root nodes.
-    chex.assert_rank(self.node_values, 2)
-    value = self.node_values[:, Tree.ROOT_INDEX]
+    tf.debugging.assert_rank(self.node_values, 2)
+    value = self.node_values[:, ROOT_INDEX]
     batch_size, = value.shape
-    root_indices = jnp.full((batch_size,), Tree.ROOT_INDEX)
+    root_indices = tf.fill((batch_size,), ROOT_INDEX)
     qvalues = self.qvalues(root_indices)
     # Extract visit counts and induced probabilities for the root nodes.
-    visit_counts = self.children_visits[:, Tree.ROOT_INDEX].astype(value.dtype)
-    total_counts = jnp.sum(visit_counts, axis=-1, keepdims=True)
-    visit_probs = visit_counts / jnp.maximum(total_counts, 1)
-    visit_probs = jnp.where(total_counts > 0, visit_probs, 1 / self.num_actions)
+    visit_counts = tf.cast(self.children_visits[:, ROOT_INDEX], value.dtype)
+    total_counts = tf.reduce_sum(visit_counts, axis=-1, keepdims=True)
+    visit_probs = visit_counts / tf.reduce_max(total_counts, 1)[..., None]
+    visit_probs = tf.where(total_counts > 0, visit_probs, 1 / self.num_actions)
     # Return relevant stats.
     return SearchSummary(  # pytype: disable=wrong-arg-types  # numpy-scalars
         visit_counts=visit_counts,
@@ -112,29 +123,27 @@ class Tree(Generic[T]):
         value=value,
         qvalues=qvalues)
 
+  def replace(self, **kwargs):
+    return namedtuple_replace(self, **kwargs)
+
 
 def infer_batch_size(tree: Tree) -> int:
   """Recovers batch size from `Tree` data structure."""
-  if tree.node_values.ndim != 2:
-    raise ValueError("Input tree is not batched.")
-  chex.assert_equal_shape_prefix(jax.tree_util.tree_leaves(tree), 1)
-  return tree.node_values.shape[0]
+  tf.assert_rank(tree.node_values, 2, message="Input tree is not batched.")
+  batch_size = tf.shape(tree.node_values)[0]
+  if tf.executing_eagerly():
+    tf.nest.map_structure(
+      lambda t: tf.debugging.assert_equal(tf.shape(t)[0], batch_size),
+      tree)
+  return batch_size
 
 
 # A number of aggregate statistics and predictions are extracted from the
 # search data and returned to the user for further processing.
-@chex.dataclass(frozen=True)
-class SearchSummary:
+class SearchSummary(NamedTuple):
   """Stats from MCTS search."""
-  visit_counts: chex.Array
-  visit_probs: chex.Array
-  value: chex.Array
-  qvalues: chex.Array
+  visit_counts: tf.Tensor
+  visit_probs: tf.Tensor
+  value: tf.Tensor
+  qvalues: tf.Tensor
 
-
-def _unbatched_qvalues(tree: Tree, index: int) -> int:
-  chex.assert_rank(tree.children_discounts, 2)
-  return (  # pytype: disable=bad-return-type  # numpy-scalars
-      tree.children_rewards[index]
-      + tree.children_discounts[index] * tree.children_values[index]
-  )

@@ -42,16 +42,16 @@ def _parse_requirements(path):
 
 
 setup(
-    name='mctx',
+    name='tf-mcts',
     version=_get_version(),
-    url='https://github.com/deepmind/mctx',
+    url='https://github.com/cmarlin/tf-mcts',
     license='Apache 2.0',
-    author='DeepMind',
-    description=('Monte Carlo tree search in JAX.'),
+    author='Cyril Marlin',
+    description=('Monte Carlo tree search in Tensorflow.'),
     long_description=open(os.path.join(_CURRENT_DIR, 'README.md')).read(),
     long_description_content_type='text/markdown',
     author_email='mctx-dev@google.com',
-    keywords='jax planning reinforcement-learning python machine learning',
+    keywords='tensorflow planning reinforcement-learning python machine learning',
     packages=find_namespace_packages(exclude=['*_test.py']),
     install_requires=_parse_requirements(
         os.path.join(_CURRENT_DIR, 'requirements', 'requirements.txt')),

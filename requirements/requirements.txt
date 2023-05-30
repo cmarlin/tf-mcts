@@ -1,3 +1,2 @@
-chex>=0.0.8
-jax>=0.1.55
-jaxlib>=0.1.37
+tensorflow>=2.9.1
+tensorflow-probability>=0.17.0

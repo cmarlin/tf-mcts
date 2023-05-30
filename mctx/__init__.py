@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Mctx: Monte Carlo tree search in JAX."""
+"""mctx: Monte Carlo tree search in Tensorflow."""
 
 from mctx._src.action_selection import gumbel_muzero_interior_action_selection
 from mctx._src.action_selection import gumbel_muzero_root_action_selection
@@ -37,7 +37,7 @@ from mctx._src.qtransforms import qtransform_completed_by_mix_value
 from mctx._src.search import search
 from mctx._src.tree import Tree
 
-__version__ = "0.0.2"
+__version__ = "0.0.1"
 
 __all__ = (
     "ChanceRecurrentFnOutput",
