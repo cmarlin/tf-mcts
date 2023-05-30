@@ -19,12 +19,12 @@ from typing import Optional, Tuple
 import tensorflow as tf  # type: ignore
 import tensorflow_probability as tfp  # type: ignore
 
-from mctx._src import action_selection
-from mctx._src import base
-from mctx._src import qtransforms
-from mctx._src import search
-from mctx._src import seq_halving
-from mctx._src import tree as tree_lib
+from tf_mcts._src import action_selection
+from tf_mcts._src import base
+from tf_mcts._src import qtransforms
+from tf_mcts._src import search
+from tf_mcts._src import seq_halving
+from tf_mcts._src import tree as tree_lib
 
 
 def muzero_policy(

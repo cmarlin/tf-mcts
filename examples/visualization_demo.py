@@ -19,7 +19,7 @@ from typing import Optional, Sequence
 from absl import app
 from absl import flags
 import tensorflow as tf
-import mctx
+import tf_mcts
 import pygraphviz
 
 FLAGS = flags.FLAGS
@@ -33,7 +33,7 @@ flags.DEFINE_string("output_file", "/tmp/search_tree.png",
 
 
 def convert_tree_to_graph(
-    tree: mctx.Tree,
+    tree: tf_mcts.Tree,
     action_labels: Optional[Sequence[str]] = None,
     batch_index: int = 0
 ) -> pygraphviz.AGraph:
@@ -93,7 +93,7 @@ def convert_tree_to_graph(
   return graph
 
 
-def _run_demo(rng_key: 'mctx.PRNGKey'):
+def _run_demo(rng_key: 'tf_mcts.PRNGKey'):
   """Runs a search algorithm on a toy environment."""
   # We will define a deterministic toy environment.
   # The deterministic `transition_matrix` has shape `[num_states, num_actions]`.
@@ -135,7 +135,7 @@ def _run_demo(rng_key: 'mctx.PRNGKey'):
       prior_logits=all_prior_logits)
 
   # Running the search.
-  policy_output = mctx.gumbel_muzero_policy(
+  policy_output = tf_mcts.gumbel_muzero_policy(
       params=(),
       rng_key=rng_key,
       root=root,
@@ -163,7 +163,7 @@ def _make_batched_env_model(
   tf.debugging.assert_equal(tf.shape(values), [num_states])
   # We will start the search at state zero.
   root_state = 0
-  root = mctx.RootFnOutput(
+  root = tf_mcts.RootFnOutput(
       prior_logits=tf.tile(prior_logits[root_state][None], [batch_size, 1]),
       value=tf.fill([batch_size], values[root_state]),
       # The embedding will hold the state index.
@@ -174,7 +174,7 @@ def _make_batched_env_model(
     del params, rng_key
     tf.debugging.assert_equal(tf.shape(action), [batch_size])
     tf.debugging.assert_equal(tf.shape(embedding), [batch_size])
-    recurrent_fn_output = mctx.RecurrentFnOutput(
+    recurrent_fn_output = tf_mcts.RecurrentFnOutput(
         reward=tf.gather(tf.gather(rewards, embedding), action, axis=1, batch_dims=1),  # rewards[embedding, action]
         discount=tf.gather(tf.gather(discounts, embedding), action, axis=1, batch_dims=1),  # discounts[embedding, action],
         prior_logits=tf.gather(prior_logits, embedding),  # prior_logits[embedding],
