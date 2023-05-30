@@ -16,7 +16,7 @@
 
 import tensorflow as tf
 
-from mctx._src import tree as tree_lib
+from tf_mcts._src import tree as tree_lib
 
 
 def qtransform_by_min_max(

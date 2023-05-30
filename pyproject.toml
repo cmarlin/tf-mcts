@@ -35,10 +35,6 @@ dependencies = [
     "tensorflow>=2.12",
 ]
 
-[tool.flit.module]
-# The distribution is tf-mcts, the import package keeps mctx's name.
-name = "mctx"
-
 [project.urls]
 homepage = "https://github.com/cmarlin/tf-mcts"
 repository = "https://github.com/cmarlin/tf-mcts"

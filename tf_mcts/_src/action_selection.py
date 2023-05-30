@@ -18,10 +18,10 @@ from typing import NamedTuple, Optional, TypeVar, Union
 import numpy as np
 import tensorflow as tf
 
-from mctx._src import base
-from mctx._src import qtransforms
-from mctx._src import seq_halving
-from mctx._src import tree as tree_lib
+from tf_mcts._src import base
+from tf_mcts._src import qtransforms
+from tf_mcts._src import seq_halving
+from tf_mcts._src import tree as tree_lib
 
 
 def switching_action_selection_wrapper(

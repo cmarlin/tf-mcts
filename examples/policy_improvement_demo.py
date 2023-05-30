@@ -20,7 +20,7 @@ from typing import NamedTuple, Tuple
 from absl import app
 from absl import flags
 import tensorflow as tf
-import mctx
+import tf_mcts
 
 FLAGS = flags.FLAGS
 flags.DEFINE_integer("seed", 42, "Random seed.")
@@ -40,8 +40,8 @@ class DemoOutput(NamedTuple):
 
 
 def _run_demo(
-    rng_key:'mctx.PRNGKey'
-  ) -> Tuple['mctx.PRNGKey', DemoOutput]:
+    rng_key:'tf_mcts.PRNGKey'
+  ) -> Tuple['tf_mcts.PRNGKey', DemoOutput]:
   """Runs a search algorithm on random data."""
   batch_size = FLAGS.batch_size
   if int(tf.__version__.split('.')[1]) >= 12:
@@ -64,7 +64,7 @@ def _run_demo(
   use_mixed_value = False
 
   # The root output would be the output of MuZero representation network.
-  root = mctx.RootFnOutput(
+  root = tf_mcts.RootFnOutput(
       prior_logits=prior_logits,
       value=raw_value,
       # The embedding is used only to implement the MuZero model.
@@ -74,7 +74,7 @@ def _run_demo(
   recurrent_fn = _make_bandit_recurrent_fn(qvalues)
 
   # Running the search.
-  policy_output = mctx.gumbel_muzero_policy(
+  policy_output = tf_mcts.gumbel_muzero_policy(
       params=(),
       rng_key=search_rng,
       root=root,
@@ -82,7 +82,7 @@ def _run_demo(
       num_simulations=FLAGS.num_simulations,
       max_num_considered_actions=FLAGS.max_num_considered_actions,
       qtransform=functools.partial(
-          mctx.qtransform_completed_by_mix_value,
+          tf_mcts.qtransform_completed_by_mix_value,
           use_mixed_value=use_mixed_value),
   )
 
@@ -120,7 +120,7 @@ def _make_bandit_recurrent_fn(qvalues):
     # On a single-player environment, use discount from [0, 1].
     # On a zero-sum self-play environment, use discount=-1.
     discount = tf.ones_like(reward)
-    recurrent_fn_output = mctx.RecurrentFnOutput(
+    recurrent_fn_output = tf_mcts.RecurrentFnOutput(
         reward=reward,
         discount=discount,
         prior_logits=tf.zeros_like(qvalues),

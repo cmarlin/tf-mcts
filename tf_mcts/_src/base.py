@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Core types used in mctx."""
+"""Core types used in tf_mcts."""
 
 from typing import Any, Callable, NamedTuple, TypeVar, Tuple, Union
 
 import tensorflow as tf
 
-from mctx._src import tree
+from tf_mcts._src import tree
 
 
 PRNGKey = Any  # TypeVar("PRNGKey")

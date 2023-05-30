@@ -17,7 +17,7 @@
 set -xeuo pipefail
 
 # Install deps in a virtual env.
-readonly VENV_DIR=/tmp/tf_mctx-env
+readonly VENV_DIR=/tmp/tf_mcts-env
 rm -rf "${VENV_DIR}"
 python3 -m venv "${VENV_DIR}"
 source "${VENV_DIR}/bin/activate"
@@ -30,15 +30,15 @@ python3 -m uv pip install --upgrade flake8 pytest-xdist pylint pylint-exit
 python3 -m uv pip install --editable ".[test]"
 
 # Lint with flake8.
-python3 -m flake8 `find mctx -name '*.py' | xargs` --count --select=E9,F63,F7,F82,E225,E251 --show-source --statistics
+python3 -m flake8 `find tf_mcts -name '*.py' | xargs` --count --select=E9,F63,F7,F82,E225,E251 --show-source --statistics
 
 # Lint with pylint.
 # Fail on errors, warning, and conventions.
 PYLINT_ARGS="-efail -wfail -cfail"
 # Lint modules and tests separately.
-pylint --rcfile=.pylintrc `find mctx -name '*.py' | grep -v 'test.py' | xargs` || pylint-exit $PYLINT_ARGS $?
+pylint --rcfile=.pylintrc `find tf_mcts -name '*.py' | grep -v 'test.py' | xargs` || pylint-exit $PYLINT_ARGS $?
 # Disable `protected-access` warnings for tests.
-pylint --rcfile=.pylintrc `find mctx -name '*_test.py' | xargs` -d W0212 || pylint-exit $PYLINT_ARGS $?
+pylint --rcfile=.pylintrc `find tf_mcts -name '*_test.py' | xargs` -d W0212 || pylint-exit $PYLINT_ARGS $?
 
 # Build the package.
 python3 -m uv pip install build
@@ -51,7 +51,7 @@ python3 -m pip install tf_mcts-*.whl
 if [ `python -c 'import sys; print(sys.version_info.minor)'` -lt 12 ];
 then
   python3 -m pip install pytype
-  python3 -m pytype "mctx" -j auto --keep-going --disable import-error
+  python3 -m pytype "tf_mcts" -j auto --keep-going --disable import-error
 fi;
 
 # Run tests using pytest.
@@ -59,7 +59,7 @@ fi;
 mkdir _testing && cd _testing
 
 # Run tests using pytest.
-python3 -m pytest --numprocesses auto --pyargs mctx
+python3 -m pytest --numprocesses auto --pyargs tf_mcts
 cd ..
 
 # Cleanup.
