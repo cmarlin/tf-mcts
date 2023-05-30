@@ -1,6 +1,6 @@
-# Mctx: MCTS-in-JAX
+# TF-Mcts: MCTS-in-Tensorflow
 
-Mctx is a library with a [JAX](https://github.com/google/jax)-native
+TF-Mcts is a library with a [Tensorflow](https://www.tensorflow.org/)-native
 implementation of Monte Carlo tree search (MCTS) algorithms such as
 [AlphaZero](https://deepmind.com/blog/article/alphazero-shedding-new-light-grand-games-chess-shogi-and-go),
 [MuZero](https://deepmind.com/blog/article/muzero-mastering-go-chess-shogi-and-atari-without-rules), and
@@ -12,16 +12,16 @@ with large learned environment models parameterized by deep neural networks.
 
 ## Installation
 
-You can install the latest released version of Mctx from PyPI via:
+You can install the latest released version of TF-Mcts from PyPI via:
 
 ```sh
-pip install mctx
+pip install tf-mcts
 ```
 
 or you can install the latest development version from GitHub:
 
 ```sh
-pip install git+https://github.com/deepmind/mctx.git
+pip install git+https://github.com/cmarlin/tf-mcts.git@tensorflow
 ```
 
 ## Motivation
@@ -44,10 +44,10 @@ especially for researchers that are not familiar with C++. In turn, this limits
 adoption and further research on this critical topic.
 
 Through this library, we hope to help researchers everywhere to contribute to
-such an exciting area of research. We provide JAX-native implementations of core
+such an exciting area of research. We provide Tensorflow-native implementations of core
 search algorithms such as MCTS, that we believe strike a good balance between
 performance and usability for researchers that want to investigate search-based
-algorithms in Python. The search methods provided by Mctx are
+algorithms in Python. The search methods provided by TF-Mcts are
 heavily configurable to allow researchers to explore a variety of ideas in
 this space, and contribute to the next generation of search based agents.
 
@@ -81,7 +81,7 @@ policies: `muzero_policy` and `gumbel_muzero_policy`.
 
 The user needs to provide several learned components to specify the
 representation, dynamics and prediction used by [MuZero](https://deepmind.com/blog/article/muzero-mastering-go-chess-shogi-and-atari-without-rules).
-In the context of the Mctx library, the representation of the *root* state is
+In the context of the TF-Mcts library, the representation of the *root* state is
 specified by a `RootFnOutput`. The `RootFnOutput` contains the `prior_logits`
 from a policy network, the estimated `value` of the root state, and any
 `embedding` suitable to represent the root state for the environment model.
@@ -124,9 +124,9 @@ The following projects demonstrate the Mctx usage:
 
 Tell us about your project.
 
-## Citing Mctx
+## Citing TF-Mcts
 
-This is not an officially supported Google product. Mctx is part of the
+This is a fork of MCTX's Deepmind's product. Mctx is part of the
 [DeepMind JAX Ecosystem]; to cite Mctx, please use the [DeepMind JAX Ecosystem
 citation].
 

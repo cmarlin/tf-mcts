@@ -17,7 +17,7 @@
 set -xeuo pipefail
 
 # Install deps in a virtual env.
-readonly VENV_DIR=/tmp/mctx-env
+readonly VENV_DIR=/tmp/tf_mctx-env
 rm -rf "${VENV_DIR}"
 python3 -m venv "${VENV_DIR}"
 source "${VENV_DIR}/bin/activate"
@@ -42,8 +42,8 @@ pylint --rcfile=.pylintrc `find mctx -name '*_test.py' | xargs` -d W0212 || pyli
 
 # Build the package.
 python setup.py sdist
-pip wheel --verbose --no-deps --no-clean dist/mctx*.tar.gz
-pip install mctx*.whl
+pip wheel --verbose --no-deps --no-clean dist/tf-mcts*.tar.gz
+pip install tf_mcts*.whl
 
 # Check types with pytype.
 pytype `find mctx/_src/ -name "*py" | xargs` -k

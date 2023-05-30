@@ -16,33 +16,33 @@
 import functools
 from typing import Optional, Tuple
 
-import chex
-import jax
-import jax.numpy as jnp
+import tensorflow as tf  # type: ignore
+import tensorflow_probability as tfp  # type: ignore
 
 from mctx._src import action_selection
 from mctx._src import base
 from mctx._src import qtransforms
 from mctx._src import search
 from mctx._src import seq_halving
+from mctx._src import tree as tree_lib
 
 
 def muzero_policy(
     params: base.Params,
-    rng_key: chex.PRNGKey,
+    rng_key: base.PRNGKey,
     root: base.RootFnOutput,
     recurrent_fn: base.RecurrentFn,
     num_simulations: int,
-    invalid_actions: Optional[chex.Array] = None,
+    invalid_actions: Optional[tf.Tensor] = None,
     max_depth: Optional[int] = None,
-    loop_fn: base.LoopFn = jax.lax.fori_loop,
+    #loop_fn: base.LoopFn = tf.while_loop,
     *,
     qtransform: base.QTransform = qtransforms.qtransform_by_parent_and_siblings,
-    dirichlet_fraction: chex.Numeric = 0.25,
-    dirichlet_alpha: chex.Numeric = 0.3,
-    pb_c_init: chex.Numeric = 1.25,
-    pb_c_base: chex.Numeric = 19652,
-    temperature: chex.Numeric = 1.0) -> base.PolicyOutput[None]:
+    dirichlet_fraction: float = 0.25,  # chex.Numeric
+    dirichlet_alpha: float = 0.3,
+    pb_c_init: float = 1.25,
+    pb_c_base: float = 19652,
+    temperature: float = 1.0) -> base.PolicyOutput:  # base.PolicyOutput[None]
   """Runs MuZero search and returns the `PolicyOutput`.
 
   In the shape descriptions, `B` denotes the batch dimension.
@@ -77,13 +77,20 @@ def muzero_policy(
     `PolicyOutput` containing the proposed action, action_weights and the used
     search tree.
   """
-  rng_key, dirichlet_rng_key, search_rng_key = jax.random.split(rng_key, 3)
+  # available in tf 2.12 ?
+  if int(tf.__version__.split('.')[1]) >= 12:
+    rng_key_ = tf.random.split(rng_key, 3)
+    rng_key, dirichlet_rng_key, search_rng_key = \
+      rng_key_[0], rng_key_[1], rng_key_[2]
+  else:
+    rng_key, dirichlet_rng_key, search_rng_key = \
+      tf.identity(rng_key), rng_key, rng_key
 
   # Adding Dirichlet noise.
   noisy_logits = _get_logits_from_probs(
       _add_dirichlet_noise(
           dirichlet_rng_key,
-          jax.nn.softmax(root.prior_logits),
+          tf.nn.softmax(root.prior_logits),
           dirichlet_fraction=dirichlet_fraction,
           dirichlet_alpha=dirichlet_alpha))
   root = root.replace(
@@ -108,14 +115,21 @@ def muzero_policy(
       num_simulations=num_simulations,
       max_depth=max_depth,
       invalid_actions=invalid_actions,
-      loop_fn=loop_fn)
+      #loop_fn=loop_fn
+      )
 
   # Sampling the proposed action proportionally to the visit counts.
   summary = search_tree.summary()
   action_weights = summary.visit_probs
   action_logits = _apply_temperature(
       _get_logits_from_probs(action_weights), temperature)
-  action = jax.random.categorical(rng_key, action_logits)
+  action = tf.squeeze(
+    tf.random.stateless_categorical(
+      action_logits,
+      num_samples=1,
+      seed=rng_key,
+      dtype=tf.int32),
+    -1)
   return base.PolicyOutput(
       action=action,
       action_weights=action_weights,
@@ -124,18 +138,19 @@ def muzero_policy(
 
 def gumbel_muzero_policy(
     params: base.Params,
-    rng_key: chex.PRNGKey,
+    rng_key: base.PRNGKey,
     root: base.RootFnOutput,
     recurrent_fn: base.RecurrentFn,
     num_simulations: int,
-    invalid_actions: Optional[chex.Array] = None,
+    invalid_actions: Optional[tf.Tensor] = None,
     max_depth: Optional[int] = None,
-    loop_fn: base.LoopFn = jax.lax.fori_loop,
+    # loop_fn: base.LoopFn = tf.while_loop,
     *,
-    qtransform: base.QTransform = qtransforms.qtransform_completed_by_mix_value,
+    qtransform: base.QTransform=qtransforms.qtransform_completed_by_mix_value,
     max_num_considered_actions: int = 16,
-    gumbel_scale: chex.Numeric = 1.,
-) -> base.PolicyOutput[action_selection.GumbelMuZeroExtraData]:
+    gumbel_scale: tf.Tensor = 1.,
+) -> base.PolicyOutput:
+#) -> base.PolicyOutput[action_selection.GumbelMuZeroExtraData]:
   """Runs Gumbel MuZero search and returns the `PolicyOutput`.
 
   This policy implements Full Gumbel MuZero from
@@ -180,9 +195,14 @@ def gumbel_muzero_policy(
       prior_logits=_mask_invalid_actions(root.prior_logits, invalid_actions))
 
   # Generating Gumbel.
-  rng_key, gumbel_rng = jax.random.split(rng_key)
-  gumbel = gumbel_scale * jax.random.gumbel(
-      gumbel_rng, shape=root.prior_logits.shape, dtype=root.prior_logits.dtype)
+  if int(tf.__version__.split('.')[1]) >= 12:
+    rng_key_ = tf.random.split(rng_key, 2)
+    rng_key, gumbel_rng = rng_key_[0], rng_key_[1]
+  else:
+    rng_key, gumbel_rng = tf.identity(rng_key), rng_key
+  gumbel = tfp.distributions\
+  .Gumbel(loc=0.0, scale=gumbel_scale)\
+    .sample(root.prior_logits.shape, seed=gumbel_rng)
 
   # Searching.
   extra_data = action_selection.GumbelMuZeroExtraData(root_gumbel=gumbel)
@@ -205,17 +225,19 @@ def gumbel_muzero_policy(
       max_depth=max_depth,
       invalid_actions=invalid_actions,
       extra_data=extra_data,
-      loop_fn=loop_fn)
+      #loop_fn=loop_fn
+      )
   summary = search_tree.summary()
 
   # Acting with the best action from the most visited actions.
   # The "best" action has the highest `gumbel + logits + q`.
   # Inside the minibatch, the considered_visit can be different on states with
   # a smaller number of valid actions.
-  considered_visit = jnp.max(summary.visit_counts, axis=-1, keepdims=True)
+  considered_visit = tf.reduce_max(summary.visit_counts, axis=-1)
   # The completed_qvalues include imputed values for unvisited actions.
-  completed_qvalues = jax.vmap(qtransform, in_axes=[0, None])(  # pytype: disable=wrong-arg-types  # numpy-scalars  # pylint: disable=line-too-long
-      search_tree, search_tree.ROOT_INDEX)
+  batch_size = tree_lib.infer_batch_size(search_tree)
+  completed_qvalues = qtransform(
+      search_tree, tf.fill([batch_size], tree_lib.ROOT_INDEX))
   to_argmax = seq_halving.score_considered(
       considered_visit, gumbel, root.prior_logits, completed_qvalues,
       summary.visit_counts)
@@ -224,7 +246,7 @@ def gumbel_muzero_policy(
   # Producing action_weights usable to train the policy network.
   completed_search_logits = _mask_invalid_actions(
       root.prior_logits + completed_qvalues, invalid_actions)
-  action_weights = jax.nn.softmax(completed_search_logits)
+  action_weights = tf.nn.softmax(completed_search_logits)
   return base.PolicyOutput(
       action=action,
       action_weights=action_weights,
@@ -232,24 +254,24 @@ def gumbel_muzero_policy(
 
 
 def stochastic_muzero_policy(
-    params: chex.ArrayTree,
-    rng_key: chex.PRNGKey,
+    params: base.Params,
+    rng_key: base.PRNGKey,
     root: base.RootFnOutput,
     decision_recurrent_fn: base.DecisionRecurrentFn,
     chance_recurrent_fn: base.ChanceRecurrentFn,
     num_simulations: int,
     num_actions: int,
     num_chance_outcomes: int,
-    invalid_actions: Optional[chex.Array] = None,
+    invalid_actions: Optional[tf.Tensor] = None,
     max_depth: Optional[int] = None,
-    loop_fn: base.LoopFn = jax.lax.fori_loop,
+    # loop_fn: base.LoopFn = tf.while_loop,  # jax.lax.fori_loop,
     *,
     qtransform: base.QTransform = qtransforms.qtransform_by_parent_and_siblings,
-    dirichlet_fraction: chex.Numeric = 0.25,
-    dirichlet_alpha: chex.Numeric = 0.3,
-    pb_c_init: chex.Numeric = 1.25,
-    pb_c_base: chex.Numeric = 19652,
-    temperature: chex.Numeric = 1.0) -> base.PolicyOutput[None]:
+    dirichlet_fraction: tf.Tensor = 0.25,
+    dirichlet_alpha: float = 0.3,
+    pb_c_init: float = 1.25,
+    pb_c_base: float = 19652,
+    temperature: float = 1.0) -> base.PolicyOutput:  # base.PolicyOutput[None]
   """Runs Stochastic MuZero search.
 
   Implements search as described in the Stochastic MuZero paper:
@@ -293,13 +315,19 @@ def stochastic_muzero_policy(
     search tree.
   """
 
-  rng_key, dirichlet_rng_key, search_rng_key = jax.random.split(rng_key, 3)
+  if int(tf.__version__.split('.')[1]) >= 12:
+    rng_key_ = tf.random.split(rng_key, 3)
+    rng_key, dirichlet_rng_key, search_rng_key = \
+      rng_key_[0], rng_key_[1], rng_key_[2]
+  else:
+    rng_key, dirichlet_rng_key, search_rng_key = \
+        tf.identity(rng_key), rng_key, rng_key
 
   # Adding Dirichlet noise.
   noisy_logits = _get_logits_from_probs(
       _add_dirichlet_noise(
           dirichlet_rng_key,
-          jax.nn.softmax(root.prior_logits),
+          tf.nn.softmax(root.prior_logits),
           dirichlet_fraction=dirichlet_fraction,
           dirichlet_alpha=dirichlet_alpha))
 
@@ -307,23 +335,25 @@ def stochastic_muzero_policy(
       prior_logits=_mask_invalid_actions(noisy_logits, invalid_actions))
 
   # construct a dummy afterstate embedding
-  batch_size = jax.tree_util.tree_leaves(root.embedding)[0].shape[0]
-  dummy_action = jnp.zeros([batch_size], dtype=jnp.int32)
+  batch_size = tf.shape(tf.nest.flatten(root.embedding)[0])[0]
+  dummy_action = tf.zeros([batch_size], dtype=tf.int32)
   _, dummy_afterstate_embedding = decision_recurrent_fn(params, rng_key,
                                                         dummy_action,
                                                         root.embedding)
 
   root = root.replace(
       # pad action logits with num_chance_outcomes so dim is A + C
-      prior_logits=jnp.concatenate([
+      prior_logits=tf.concat(
+        [
           root.prior_logits,
-          jnp.full([batch_size, num_chance_outcomes], fill_value=-jnp.inf)
-      ], axis=-1),
+          tf.fill([batch_size, num_chance_outcomes], -float('inf'))
+        ],
+        -1),
       # replace embedding with wrapper.
       embedding=base.StochasticRecurrentState(
           state_embedding=root.embedding,
           afterstate_embedding=dummy_afterstate_embedding,
-          is_decision_node=jnp.ones([batch_size], dtype=bool)))
+          is_decision_node=tf.ones([batch_size], dtype=bool)))
 
   # Stochastic MuZero Change: We need to be able to tell if different nodes are
   # decision or chance. This is accomplished by imposing a special structure
@@ -360,7 +390,8 @@ def stochastic_muzero_policy(
       num_simulations=num_simulations,
       max_depth=max_depth,
       invalid_actions=invalid_actions,
-      loop_fn=loop_fn)
+      # loop_fn=loop_fn
+      )
 
   # Sampling the proposed action proportionally to the visit counts.
   search_tree = _mask_tree(search_tree, num_actions, 'decision')
@@ -368,7 +399,14 @@ def stochastic_muzero_policy(
   action_weights = summary.visit_probs
   action_logits = _apply_temperature(
       _get_logits_from_probs(action_weights), temperature)
-  action = jax.random.categorical(rng_key, action_logits)
+  action = tf.squeeze(
+    tf.random.stateless_categorical(
+      action_logits,
+      num_samples=1,
+      seed=rng_key,
+      dtype=tf.int32
+      ),
+    -1)
   return base.PolicyOutput(
       action=action, action_weights=action_weights, search_tree=search_tree)
 
@@ -377,31 +415,38 @@ def _mask_invalid_actions(logits, invalid_actions):
   """Returns logits with zero mass to invalid actions."""
   if invalid_actions is None:
     return logits
-  chex.assert_equal_shape([logits, invalid_actions])
-  logits = logits - jnp.max(logits, axis=-1, keepdims=True)
+  if tf.executing_eagerly():
+    tf.assert_equal(tf.shape(logits), tf.shape(invalid_actions))
+  logits = logits - tf.reduce_max(logits, axis=-1, keepdims=True)
   # At the end of an episode, all actions can be invalid. A softmax would then
   # produce NaNs, if using -inf for the logits. We avoid the NaNs by using
   # a finite `min_logit` for the invalid actions.
-  min_logit = jnp.finfo(logits.dtype).min
-  return jnp.where(invalid_actions, min_logit, logits)
+  min_logit = logits.dtype.min
+  return tf.where(invalid_actions, min_logit, logits)
 
 
 def _get_logits_from_probs(probs):
-  tiny = jnp.finfo(probs).tiny
-  return jnp.log(jnp.maximum(probs, tiny))
+  tiny = tf.experimental.numpy.finfo(probs.dtype).tiny
+  return tf.math.log(tf.math.maximum(probs, tiny))
 
 
 def _add_dirichlet_noise(rng_key, probs, *, dirichlet_alpha,
                          dirichlet_fraction):
   """Mixes the probs with Dirichlet noise."""
-  chex.assert_rank(probs, 2)
-  chex.assert_type([dirichlet_alpha, dirichlet_fraction], float)
+  tf.assert_rank(probs, 2)
+  assert isinstance(dirichlet_alpha, float)
+  assert isinstance(dirichlet_fraction, float)
 
   batch_size, num_actions = probs.shape
-  noise = jax.random.dirichlet(
-      rng_key,
-      alpha=jnp.full([num_actions], fill_value=dirichlet_alpha),
-      shape=(batch_size,))
+  # TODO: add adaptive dirichlet
+  distribution = tfp.distributions.Dirichlet(
+    concentration=tf.fill([num_actions], value=dirichlet_alpha)
+  )
+  noise = tf.cast(
+    distribution.sample(
+      batch_size,
+      seed=rng_key),
+    dtype=probs.dtype)
   noisy_probs = (1 - dirichlet_fraction) * probs + dirichlet_fraction * noise
   return noisy_probs
 
@@ -409,9 +454,9 @@ def _add_dirichlet_noise(rng_key, probs, *, dirichlet_alpha,
 def _apply_temperature(logits, temperature):
   """Returns `logits / temperature`, supporting also temperature=0."""
   # The max subtraction prevents +inf after dividing by a small temperature.
-  logits = logits - jnp.max(logits, keepdims=True, axis=-1)
-  tiny = jnp.finfo(logits.dtype).tiny
-  return logits / jnp.maximum(tiny, temperature)
+  logits = logits - tf.reduce_max(logits, keepdims=True, axis=-1)
+  tiny = tf.experimental.numpy.finfo(logits.dtype).tiny
+  return logits / tf.math.maximum(tiny, temperature)
 
 
 def _make_stochastic_recurrent_fn(
@@ -424,17 +469,19 @@ def _make_stochastic_recurrent_fn(
 
   def stochastic_recurrent_fn(
       params: base.Params,
-      rng: chex.PRNGKey,
+      rng: base.PRNGKey,
       action_or_chance: base.Action,  # [B]
       state: base.StochasticRecurrentState
   ) -> Tuple[base.RecurrentFnOutput, base.StochasticRecurrentState]:
-    batch_size = jax.tree_util.tree_leaves(state.state_embedding)[0].shape[0]
+    batch_size = tf.shape(tf.nest.flatten(state.state_embedding)[0])[0]
     # Internally we assume that there are `A' = A + C` "actions";
     # action_or_chance can take on values in `{0, 1, ..., A' - 1}`,.
     # To interpret it as an action we can leave it as is:
     action = action_or_chance - 0
+    action = tf.where(state.is_decision_node, action, 0)
     # To interpret it as a chance outcome we subtract num_actions:
     chance_outcome = action_or_chance - num_actions
+    chance_outcome = tf.where(state.is_decision_node, 0, chance_outcome)
 
     decision_output, afterstate_embedding = decision_node_fn(
         params, rng, action, state.state_embedding)
@@ -443,12 +490,13 @@ def _make_stochastic_recurrent_fn(
     # "actions" we pad with `A` dummy logits which are ultimately ignored:
     # see `_mask_tree`.
     output_if_decision_node = base.RecurrentFnOutput(
-        prior_logits=jnp.concatenate([
-            jnp.full([batch_size, num_actions], fill_value=-jnp.inf),
-            decision_output.chance_logits], axis=-1),
+        prior_logits=tf.concat([
+            tf.fill([batch_size, num_actions], -float('inf')),
+            decision_output.chance_logits],
+            -1),
         value=decision_output.afterstate_value,
-        reward=jnp.zeros_like(decision_output.afterstate_value),
-        discount=jnp.ones_like(decision_output.afterstate_value))
+        reward=tf.zeros_like(decision_output.afterstate_value, tf.float32),
+        discount=tf.ones_like(decision_output.afterstate_value, tf.float32))
 
     chance_output, state_embedding = chance_node_fn(params, rng, chance_outcome,
                                                     state.afterstate_embedding)
@@ -457,10 +505,10 @@ def _make_stochastic_recurrent_fn(
     # we pad with `C` dummy logits which are ultimately ignored: see
     # `_mask_tree`.
     output_if_chance_node = base.RecurrentFnOutput(
-        prior_logits=jnp.concatenate([
+        prior_logits=tf.concat([
             chance_output.action_logits,
-            jnp.full([batch_size, num_chance_outcomes], fill_value=-jnp.inf)
-            ], axis=-1),
+            tf.fill([batch_size, num_chance_outcomes], -float('inf'))
+            ], -1),
         value=chance_output.value,
         reward=chance_output.reward,
         discount=chance_output.discount)
@@ -468,18 +516,18 @@ def _make_stochastic_recurrent_fn(
     new_state = base.StochasticRecurrentState(
         state_embedding=state_embedding,
         afterstate_embedding=afterstate_embedding,
-        is_decision_node=jnp.logical_not(state.is_decision_node))
+        is_decision_node=tf.logical_not(state.is_decision_node))
 
     def _broadcast_where(decision_leaf, chance_leaf):
-      extra_dims = [1] * (len(decision_leaf.shape) - 1)
-      expanded_is_decision = jnp.reshape(state.is_decision_node,
-                                         [-1] + extra_dims)
-      return jnp.where(
+      extra_dims = tf.ones(tf.rank(decision_leaf)-1, tf.int32)
+      expanded_is_decision = tf.reshape(state.is_decision_node,
+                                         tf.concat([[-1], extra_dims], -1))
+      return tf.where(
           # ensure state.is_decision node has appropriate shape.
           expanded_is_decision,
           decision_leaf, chance_leaf)
 
-    output = jax.tree_map(_broadcast_where,
+    output = tf.nest.map_structure(_broadcast_where,
                           output_if_decision_node,
                           output_if_chance_node)
     return output, new_state
@@ -531,25 +579,36 @@ def _make_stochastic_action_selection_fn(
 
   def _chance_node_selection_fn(
       tree: search.Tree,
-      node_index: chex.Array,
-  ) -> chex.Array:
-    num_chance = tree.children_visits[node_index]
-    chance_logits = tree.children_prior_logits[node_index]
-    prob_chance = jax.nn.softmax(chance_logits)
-    argmax_chance = jnp.argmax(prob_chance / (num_chance + 1), axis=-1)
+      node_index: tf.Tensor,
+  ) -> tf.Tensor:
+    num_chance = tf.cast(
+      tf.gather(
+        tree.children_visits, node_index, axis=1, batch_dims=1),
+        tf.float32)
+    chance_logits = tf.gather(
+      tree.children_prior_logits, node_index, axis=1, batch_dims=1)
+    prob_chance = tf.nn.softmax(chance_logits)
+    argmax_chance = tf.argmax(
+      prob_chance / (num_chance + 1),
+      axis=-1,
+      output_type=tf.int32)
     return argmax_chance
 
-  def _action_selection_fn(key: chex.PRNGKey, tree: search.Tree,
-                           node_index: chex.Array,
-                           depth: chex.Array) -> chex.Array:
-    is_decision = tree.embeddings.is_decision_node[node_index]
+  def _action_selection_fn(key: base.PRNGKey, tree: search.Tree,
+                           node_index: tf.Tensor,
+                           depth: tf.Tensor) -> tf.Tensor:
+    is_decision = tf.gather(
+      tree.embeddings.is_decision_node,
+      node_index,
+      axis=1,
+      batch_dims=1)
     chance_selection = _chance_node_selection_fn(
         tree=_mask_tree(tree, num_actions, 'chance'),
         node_index=node_index) + num_actions
     decision_selection = decision_node_selection_fn(
         key, _mask_tree(tree, num_actions, 'decision'), node_index, depth)
-    return jax.lax.cond(is_decision, lambda: decision_selection,
-                        lambda: chance_selection)
+    return tf.where(is_decision, decision_selection,
+                    chance_selection)
+
 
   return _action_selection_fn
-

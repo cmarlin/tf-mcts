@@ -16,8 +16,7 @@
 
 import math
 
-import chex
-import jax.numpy as jnp
+import tensorflow as tf
 
 
 def score_considered(considered_visit, gumbel, logits, normalized_qvalues,
@@ -25,12 +24,16 @@ def score_considered(considered_visit, gumbel, logits, normalized_qvalues,
   """Returns a score usable for an argmax."""
   # We allow to visit a child, if it is the only considered child.
   low_logit = -1e9
-  logits = logits - jnp.max(logits, keepdims=True, axis=-1)
-  penalty = jnp.where(
-      visit_counts == considered_visit,
-      0, -jnp.inf)
-  chex.assert_equal_shape([gumbel, logits, normalized_qvalues, penalty])
-  return jnp.maximum(low_logit, gumbel + logits + normalized_qvalues) + penalty
+  logits = logits - tf.reduce_max(logits, keepdims=True, axis=-1)
+  penalty = tf.where(
+      tf.math.equal(visit_counts, considered_visit[..., None]),
+      0.0, -float("inf"))
+  tf.assert_equal(tf.shape(gumbel), tf.shape(logits))
+  tf.assert_equal(tf.shape(gumbel), tf.shape(normalized_qvalues))
+  tf.assert_equal(tf.shape(gumbel), tf.shape(penalty))
+  return tf.math.maximum(
+    low_logit,
+    gumbel + logits + normalized_qvalues) + penalty
 
 
 def get_sequence_of_considered_visits(max_num_considered_actions,
@@ -86,4 +89,3 @@ def get_table_of_considered_visits(max_num_considered_actions, num_simulations):
   return tuple(
       get_sequence_of_considered_visits(m, num_simulations)
       for m in range(max_num_considered_actions + 1))
-

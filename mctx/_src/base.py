@@ -14,24 +14,26 @@
 # ==============================================================================
 """Core types used in mctx."""
 
-from typing import Any, Callable, Generic, TypeVar, Tuple
+from typing import Any, Callable, NamedTuple, TypeVar, Tuple, Union
 
-import chex
+import tensorflow as tf
 
 from mctx._src import tree
+
+
+PRNGKey = Any  # TypeVar("PRNGKey")
 
 
 # Parameters are arbitrary nested structures of `chex.Array`.
 # A nested structure is either a single object, or a collection (list, tuple,
 # dictionary, etc.) of other nested structures.
-Params = chex.ArrayTree
+Params = Union[tf.Tensor, Tuple[tf.Tensor, ...]]
 
 
 # The model used to search is expressed by a `RecurrentFn` function that takes
 # `(params, rng_key, action, embedding)` and returns a `RecurrentFnOutput` and
 # the new state embedding.
-@chex.dataclass(frozen=True)
-class RecurrentFnOutput:
+class RecurrentFnOutput(NamedTuple):
   """The output of a `RecurrentFn`.
 
   reward: `[B]` an approximate reward from the state-action transition.
@@ -40,51 +42,51 @@ class RecurrentFnOutput:
   value: `[B]` an approximate value of the state after the state-action
     transition.
   """
-  reward: chex.Array
-  discount: chex.Array
-  prior_logits: chex.Array
-  value: chex.Array
+  reward: tf.Tensor
+  discount: tf.Tensor
+  prior_logits: tf.Tensor
+  value: tf.Tensor
 
 
-Action = chex.Array
+Action = tf.Tensor
 RecurrentState = Any
 RecurrentFn = Callable[
-    [Params, chex.PRNGKey, Action, RecurrentState],
+    [Params, PRNGKey, Action, RecurrentState],
     Tuple[RecurrentFnOutput, RecurrentState]]
 
-
-@chex.dataclass(frozen=True)
-class RootFnOutput:
+class RootFnOutput(NamedTuple):
   """The output of a representation network.
 
   prior_logits: `[B, num_actions]` the logits produced by a policy network.
   value: `[B]` an approximate value of the current state.
   embedding: `[B, ...]` the inputs to the next `recurrent_fn` call.
   """
-  prior_logits: chex.Array
-  value: chex.Array
+  prior_logits: tf.Tensor
+  value: tf.Tensor
   embedding: RecurrentState
+
+  def replace(self, **kwargs):
+    return tree.namedtuple_replace(self, **kwargs)
 
 
 # Action selection functions specify how to pick nodes to expand in the tree.
-NodeIndices = chex.Array
-Depth = chex.Array
+NodeIndices = tf.Tensor
+Depth = tf.Tensor
 RootActionSelectionFn = Callable[
-    [chex.PRNGKey, tree.Tree, NodeIndices], chex.Array]
+    [PRNGKey, tree.Tree, NodeIndices], tf.Tensor]
 InteriorActionSelectionFn = Callable[
-    [chex.PRNGKey, tree.Tree, NodeIndices, Depth],
-    chex.Array]
-QTransform = Callable[[tree.Tree, chex.Array], chex.Array]
+    [PRNGKey, tree.Tree, NodeIndices, Depth],
+    tf.Tensor]
+QTransform = Callable[[tree.Tree, tf.Tensor], tf.Tensor]
 # LoopFn has the same interface as jax.lax.fori_loop.
 LoopFn = Callable[
-    [int, int, Callable[[Any, Any], Any], Tuple[chex.PRNGKey, tree.Tree]],
-    Tuple[chex.PRNGKey, tree.Tree]]
+    [int, int, Callable[[Any, Any], Any], Tuple[PRNGKey, tree.Tree]],
+    Tuple[PRNGKey, tree.Tree]]
 
 T = TypeVar("T")
 
 
-@chex.dataclass(frozen=True)
-class PolicyOutput(Generic[T]):
+class PolicyOutput(NamedTuple):  # Generic[T]
   """The output of a policy.
 
   action: `[B]` the proposed action.
@@ -94,13 +96,12 @@ class PolicyOutput(Generic[T]):
     `cross_entropy(labels=stop_gradient(action_weights), logits=prior_logits)`.
   search_tree: `[B, ...]` the search tree of the finished search.
   """
-  action: chex.Array
-  action_weights: chex.Array
-  search_tree: tree.Tree[T]
+  action: tf.Tensor
+  action_weights: tf.Tensor
+  search_tree: tree.Tree  # tree.Tree[T]
 
 
-@chex.dataclass(frozen=True)
-class DecisionRecurrentFnOutput:
+class DecisionRecurrentFnOutput(NamedTuple):
   """Output of the function for expanding decision nodes.
 
   Expanding a decision node takes an action and a state embedding and produces
@@ -113,12 +114,11 @@ class DecisionRecurrentFnOutput:
     chance_logits: `[B, C]` logits of `C` chance outcomes at the afterstate.
     afterstate_value: `[B]` values of the afterstates `v(sa)`.
   """
-  chance_logits: chex.Array  # [B, C]
-  afterstate_value: chex.Array  # [B]
+  chance_logits: tf.Tensor  # [B, C]
+  afterstate_value: tf.Tensor  # [B]
 
 
-@chex.dataclass(frozen=True)
-class ChanceRecurrentFnOutput:
+class ChanceRecurrentFnOutput(NamedTuple):
   """Output of the function for expanding chance nodes.
 
   Expanding a chance node takes a chance outcome and an afterstate embedding
@@ -132,14 +132,13 @@ class ChanceRecurrentFnOutput:
     reward: `[B]` rewards at the states.
     discount: `[B]` discounts at the states.
   """
-  action_logits: chex.Array  # [B, A]
-  value: chex.Array  # [B]
-  reward: chex.Array  # [B]
-  discount: chex.Array  # [B]
+  action_logits: tf.Tensor  # [B, A]
+  value: tf.Tensor  # [B]
+  reward: tf.Tensor  # [B]
+  discount: tf.Tensor  # [B]
 
 
-@chex.dataclass(frozen=True)
-class StochasticRecurrentState:
+class StochasticRecurrentState(NamedTuple):
   """Wrapper that enables different treatment of decision and chance nodes.
 
   In Stochastic MuZero tree nodes can either be decision or chance nodes, these
@@ -156,15 +155,15 @@ class StochasticRecurrentState:
       is a decision node, `afterstate_embedding` is a dummy value. If it is a
       chance node, `state_embedding` is a dummy value.
   """
-  state_embedding: chex.ArrayTree  # [B, ...]
-  afterstate_embedding: chex.ArrayTree  # [B, ...]
-  is_decision_node: chex.Array  # [B]
+  state_embedding: Tuple[tf.Tensor]  # [B, ...]
+  afterstate_embedding: Tuple[tf.Tensor]  # [B, ...]
+  is_decision_node: tf.Tensor  # [B]
 
 
-RecurrentState = chex.ArrayTree
+RecurrentState = Tuple[tf.Tensor]
 
-DecisionRecurrentFn = Callable[[Params, chex.PRNGKey, Action, RecurrentState],
+DecisionRecurrentFn = Callable[[Params, PRNGKey, Action, RecurrentState],
                                Tuple[DecisionRecurrentFnOutput, RecurrentState]]
 
-ChanceRecurrentFn = Callable[[Params, chex.PRNGKey, Action, RecurrentState],
+ChanceRecurrentFn = Callable[[Params, PRNGKey, Action, RecurrentState],
                              Tuple[ChanceRecurrentFnOutput, RecurrentState]]

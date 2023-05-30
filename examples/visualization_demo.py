@@ -18,9 +18,7 @@ from typing import Optional, Sequence
 
 from absl import app
 from absl import flags
-import chex
-import jax
-import jax.numpy as jnp
+import tensorflow as tf
 import mctx
 import pygraphviz
 
@@ -49,7 +47,7 @@ def convert_tree_to_graph(
   Returns:
     A Graphviz graph representation of `tree`.
   """
-  chex.assert_rank(tree.node_values, 2)
+  tf.debugging.assert_rank(tree.node_values, 2)
   batch_size = tree.node_values.shape[0]
   if action_labels is None:
     action_labels = range(tree.num_actions)
@@ -67,8 +65,8 @@ def convert_tree_to_graph(
             f"Visits: {tree.node_visits[batch_index, node_i]}\n")
 
   def edge_to_str(node_i, a_i):
-    node_index = jnp.full([batch_size], node_i)
-    probs = jax.nn.softmax(tree.children_prior_logits[batch_index, node_i])
+    node_index = tf.fill([batch_size], node_i)
+    probs = tf.nn.softmax(tree.children_prior_logits[batch_index, node_i])
     return (f"{action_labels[a_i]}\n"
             f"Q: {tree.qvalues(node_index)[batch_index, a_i]:.2f}\n"  # pytype: disable=unsupported-operands  # always-use-return-annotations
             f"p: {probs[a_i]:.2f}\n")
@@ -81,7 +79,7 @@ def convert_tree_to_graph(
   for node_i in range(tree.num_simulations):
     for a_i in range(tree.num_actions):
       # Index of children, or -1 if not expanded
-      children_i = tree.children_index[batch_index, node_i, a_i]
+      children_i = tree.children_index[batch_index, node_i, a_i].numpy()
       if children_i >= 0:
         graph.add_node(
             children_i,
@@ -95,12 +93,12 @@ def convert_tree_to_graph(
   return graph
 
 
-def _run_demo(rng_key: chex.PRNGKey):
+def _run_demo(rng_key: 'mctx.PRNGKey'):
   """Runs a search algorithm on a toy environment."""
   # We will define a deterministic toy environment.
   # The deterministic `transition_matrix` has shape `[num_states, num_actions]`.
   # The `transition_matrix[s, a]` holds the next state.
-  transition_matrix = jnp.array([
+  transition_matrix = tf.convert_to_tensor([
       [1, 2, 3, 4],
       [0, 5, 0, 0],
       [0, 0, 0, 6],
@@ -108,10 +106,10 @@ def _run_demo(rng_key: chex.PRNGKey):
       [0, 0, 0, 0],
       [0, 0, 0, 0],
       [0, 0, 0, 0],
-  ], dtype=jnp.int32)
+  ], dtype=tf.int32)
   # The `rewards` have shape `[num_states, num_actions]`. The `rewards[s, a]`
   # holds the reward for that (s, a) pair.
-  rewards = jnp.array([
+  rewards = tf.convert_to_tensor([
       [1, -1, 0, 0],
       [0, 0, 0, 0],
       [0, 0, 0, 0],
@@ -119,14 +117,14 @@ def _run_demo(rng_key: chex.PRNGKey):
       [0, 0, 0, 0],
       [0, 0, 0, 0],
       [10, 0, 20, 0],
-  ], dtype=jnp.float32)
+  ], dtype=tf.float32)
   num_states = rewards.shape[0]
   # The discount for each (s, a) pair.
-  discounts = jnp.where(transition_matrix > 0, 1.0, 0.0)
+  discounts = tf.where(transition_matrix > 0, 1.0, 0.0)
   # Using optimistic initial values to encourage exploration.
-  values = jnp.full([num_states], 15.0)
+  values = tf.fill([num_states], 15.0)
   # The prior policies for each state.
-  all_prior_logits = jnp.zeros_like(rewards)
+  all_prior_logits = tf.zeros_like(rewards)
   root, recurrent_fn = _make_batched_env_model(
       # Using batch_size=2 to test the batched search.
       batch_size=2,
@@ -152,44 +150,44 @@ def _run_demo(rng_key: chex.PRNGKey):
 def _make_batched_env_model(
     batch_size: int,
     *,
-    transition_matrix: chex.Array,
-    rewards: chex.Array,
-    discounts: chex.Array,
-    values: chex.Array,
-    prior_logits: chex.Array):
+    transition_matrix: tf.Tensor,
+    rewards: tf.Tensor,
+    discounts: tf.Tensor,
+    values: tf.Tensor,
+    prior_logits: tf.Tensor):
   """Returns a batched `(root, recurrent_fn)`."""
-  chex.assert_equal_shape([transition_matrix, rewards, discounts,
-                           prior_logits])
+  tf.debugging.assert_equal(tf.shape(transition_matrix), tf.shape(rewards))
+  tf.debugging.assert_equal(tf.shape(transition_matrix), tf.shape(discounts))
+  tf.debugging.assert_equal(tf.shape(transition_matrix), tf.shape(prior_logits))
   num_states, num_actions = transition_matrix.shape
-  chex.assert_shape(values, [num_states])
+  tf.debugging.assert_equal(tf.shape(values), [num_states])
   # We will start the search at state zero.
   root_state = 0
   root = mctx.RootFnOutput(
-      prior_logits=jnp.full([batch_size, num_actions],
-                            prior_logits[root_state]),
-      value=jnp.full([batch_size], values[root_state]),
+      prior_logits=tf.tile(prior_logits[root_state][None], [batch_size, 1]),
+      value=tf.fill([batch_size], values[root_state]),
       # The embedding will hold the state index.
-      embedding=jnp.zeros([batch_size], dtype=jnp.int32),
+      embedding=tf.zeros([batch_size], dtype=tf.int32),
   )
 
   def recurrent_fn(params, rng_key, action, embedding):
     del params, rng_key
-    chex.assert_shape(action, [batch_size])
-    chex.assert_shape(embedding, [batch_size])
+    tf.debugging.assert_equal(tf.shape(action), [batch_size])
+    tf.debugging.assert_equal(tf.shape(embedding), [batch_size])
     recurrent_fn_output = mctx.RecurrentFnOutput(
-        reward=rewards[embedding, action],
-        discount=discounts[embedding, action],
-        prior_logits=prior_logits[embedding],
-        value=values[embedding])
-    next_embedding = transition_matrix[embedding, action]
+        reward=tf.gather(tf.gather(rewards, embedding), action, axis=1, batch_dims=1),  # rewards[embedding, action]
+        discount=tf.gather(tf.gather(discounts, embedding), action, axis=1, batch_dims=1),  # discounts[embedding, action],
+        prior_logits=tf.gather(prior_logits, embedding),  # prior_logits[embedding],
+        value=tf.gather(values, embedding))  # values[embedding])
+    next_embedding = tf.gather(tf.gather(transition_matrix, embedding), action, axis=1, batch_dims=1)  # transition_matrix[embedding, action]
     return recurrent_fn_output, next_embedding
 
   return root, recurrent_fn
 
 
 def main(_):
-  rng_key = jax.random.PRNGKey(FLAGS.seed)
-  jitted_run_demo = jax.jit(_run_demo)
+  rng_key = tf.convert_to_tensor([0, FLAGS.seed])
+  jitted_run_demo = tf.function(_run_demo, jit_compile=True)
   print("Starting search.")
   policy_output = jitted_run_demo(rng_key)
   batch_index = 0

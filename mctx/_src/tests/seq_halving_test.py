@@ -14,10 +14,14 @@
 # ==============================================================================
 """Tests for `seq_halving.py`."""
 from absl.testing import absltest
+import os
 from mctx._src import seq_halving
 
 
 class SeqHalvingTest(absltest.TestCase):
+
+  def setUp(self):
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
   def _check_visits(self, expected_results, max_num_considered_actions,
                     num_simulations):
