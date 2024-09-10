@@ -93,7 +93,7 @@ new_embedding)` with a `RecurrentFnOutput` and the embedding of the next state.
 The `RecurrentFnOutput` contains the `reward` and `discount` for the transition,
 and `prior_logits` and `value` for the new state.
 
-In [`examples/visualization_demo.py`](https://github.com/deepmind/mctx/blob/main/examples/visualization_demo.py), you can
+In [`examples/visualization_demo.py`](https://github.com/google-deepmind/mctx/blob/main/examples/visualization_demo.py), you can
 see calls to a policy:
 
 ```python
@@ -110,25 +110,35 @@ We recommend to use the `gumbel_muzero_policy`.
 [Gumbel MuZero](https://openreview.net/forum?id=bERaNdoegnO) guarantees a policy
 improvement if the action values are correctly evaluated. The policy improvement
 is demonstrated in
-[`examples/policy_improvement_demo.py`](https://github.com/deepmind/mctx/blob/main/examples/policy_improvement_demo.py).
+[`examples/policy_improvement_demo.py`](https://github.com/google-deepmind/mctx/blob/main/examples/policy_improvement_demo.py).
 
 ### Example projects
 The following projects demonstrate the Mctx usage:
 
+- [Pgx](https://github.com/sotetsuk/pgx) — A collection of 20+ vectorized
+  JAX environments, including backgammon, chess, shogi, Go, and an AlphaZero
+  example.
 - [Basic Learning Demo with Mctx](https://github.com/kenjyoung/mctx_learning_demo) —
   AlphaZero on random mazes.
 - [a0-jax](https://github.com/NTT123/a0-jax) — AlphaZero on Connect Four,
   Gomoku, and Go.
 - [muax](https://github.com/bwfbowen/muax) — MuZero on gym-style environments
 (CartPole, LunarLander).
+- [Classic MCTS](https://github.com/Carbon225/mctx-classic) — A simple example on Connect Four.
+- [mctx-az](https://github.com/lowrollr/mctx-az) — Mctx with AlphaZero subtree persistence.
 
 Tell us about your project.
 
 ## Citing TF-Mcts
 
-This is a fork of MCTX's Deepmind's product. Mctx is part of the
-[DeepMind JAX Ecosystem]; to cite Mctx, please use the [DeepMind JAX Ecosystem
-citation].
+This is a fork of MCTX's Deepmind's product, to cite Mctx
+please use the citation:
 
-[DeepMind JAX Ecosystem]: https://deepmind.com/blog/article/using-jax-to-accelerate-our-research "DeepMind JAX Ecosystem"
-[DeepMind JAX Ecosystem citation]: https://github.com/deepmind/jax/blob/main/deepmind2020jax.txt "Citation"
+```bibtex
+@software{deepmind2020jax,
+  title = {The {D}eep{M}ind {JAX} {E}cosystem},
+  author = {DeepMind and Babuschkin, Igor and Baumli, Kate and Bell, Alison and Bhupatiraju, Surya and Bruce, Jake and Buchlovsky, Peter and Budden, David and Cai, Trevor and Clark, Aidan and Danihelka, Ivo and Dedieu, Antoine and Fantacci, Claudio and Godwin, Jonathan and Jones, Chris and Hemsley, Ross and Hennigan, Tom and Hessel, Matteo and Hou, Shaobo and Kapturowski, Steven and Keck, Thomas and Kemaev, Iurii and King, Michael and Kunesch, Markus and Martens, Lena and Merzic, Hamza and Mikulik, Vladimir and Norman, Tamara and Papamakarios, George and Quan, John and Ring, Roman and Ruiz, Francisco and Sanchez, Alvaro and Sartran, Laurent and Schneider, Rosalia and Sezener, Eren and Spencer, Stephen and Srinivasan, Srivatsan and Stanojevi\'{c}, Milo\v{s} and Stokowiec, Wojciech and Wang, Luyu and Zhou, Guangyao and Viola, Fabio},
+  url = {http://github.com/deepmind},
+  year = {2020},
+}
+```

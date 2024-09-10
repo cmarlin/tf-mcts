@@ -260,8 +260,6 @@ def stochastic_muzero_policy(
     decision_recurrent_fn: base.DecisionRecurrentFn,
     chance_recurrent_fn: base.ChanceRecurrentFn,
     num_simulations: int,
-    num_actions: int,
-    num_chance_outcomes: int,
     invalid_actions: Optional[tf.Tensor] = None,
     max_depth: Optional[int] = None,
     # loop_fn: base.LoopFn = tf.while_loop,  # jax.lax.fori_loop,
@@ -290,11 +288,9 @@ def stochastic_muzero_policy(
       `(DecisionRecurrentFnOutput, afterstate_embedding)`.
     chance_recurrent_fn:  a callable to be called on the leaf chance nodes and
       unvisited actions retrieved by the simulation step, which takes as args
-      `(params, rng_key, action, afterstate_embedding)` and returns a
+      `(params, rng_key, chance_outcome, afterstate_embedding)` and returns a
       `(ChanceRecurrentFnOutput, state_embedding)`.
     num_simulations: the number of simulations.
-    num_actions: number of environment actions.
-    num_chance_outcomes: number of chance outcomes following an afterstate.
     invalid_actions: a mask with invalid actions. Invalid actions have ones,
       valid actions have zeros in the mask. Shape `[B, num_actions]`.
     max_depth: maximum search tree depth allowed during simulation.
@@ -314,6 +310,8 @@ def stochastic_muzero_policy(
     `PolicyOutput` containing the proposed action, action_weights and the used
     search tree.
   """
+
+  num_actions = root.prior_logits.shape[-1]
 
   if int(tf.__version__.split('.')[1]) >= 12:
     rng_key_ = tf.random.split(rng_key, 3)
@@ -337,9 +335,9 @@ def stochastic_muzero_policy(
   # construct a dummy afterstate embedding
   batch_size = tf.shape(tf.nest.flatten(root.embedding)[0])[0]
   dummy_action = tf.zeros([batch_size], dtype=tf.int32)
-  _, dummy_afterstate_embedding = decision_recurrent_fn(params, rng_key,
-                                                        dummy_action,
-                                                        root.embedding)
+  dummy_output, dummy_afterstate_embedding = decision_recurrent_fn(
+      params, rng_key, dummy_action, root.embedding)
+  num_chance_outcomes = dummy_output.chance_logits.shape[-1]
 
   root = root.replace(
       # pad action logits with num_chance_outcomes so dim is A + C

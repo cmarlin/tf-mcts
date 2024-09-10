@@ -53,7 +53,7 @@ class Tree(NamedTuple):  # Generic[T]
     node.
   children_index: `[B, N, num_actions]` the node index of the children for each
     action.
-  children_prior_logits: `[B, N, Anum_actions` the action prior logits of each
+  children_prior_logits: `[B, N, num_actions]` the action prior logits of each
     node.
   children_visits: `[B, N, num_actions]` the visit counts for children for
     each action.
@@ -98,10 +98,12 @@ class Tree(NamedTuple):  # Generic[T]
 
   def qvalues(self, indices:tf.Tensor):
     """Compute q-values for any node indices in the tree."""
+    # pytype: disable=wrong-arg-types  # jnp-type
     tf.debugging.assert_rank(self.children_discounts, 3)
     return tf.gather(self.children_rewards, indices, axis=1, batch_dims=1) + \
       tf.gather(self.children_discounts, indices, axis=1, batch_dims=1) * \
         tf.gather(self.children_values, indices, axis=1, batch_dims=1)
+    # pytype: enable=wrong-arg-types
 
   def summary(self) -> SearchSummary:
     """Extract summary statistics for the root node."""

@@ -220,6 +220,7 @@ def simulate(
   batch_size = tf.shape(tree.node_values)[0]
   node_index = tf.fill([batch_size], tree_lib.ROOT_INDEX)  # dtype=tf.int32
   depth = tf.zeros(batch_size, dtype=tree.children_prior_logits.dtype)
+  # pytype: disable=wrong-arg-types  # jnp-type
   initial_state = _SimulationState(
       # rng_key=rng_key,
       node_index=tf.fill([batch_size], tree_lib.NO_PARENT),
@@ -227,6 +228,7 @@ def simulate(
       next_node_index=node_index,
       depth=depth,
       is_continuing=tf.fill([batch_size], True))
+  # pytype: enable=wrong-arg-types
   _, end_state = tf.while_loop(cond_fun, body_fun, (rng_key, initial_state))
 
   # Returning a node with a selected action.
