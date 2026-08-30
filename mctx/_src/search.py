@@ -142,8 +142,14 @@ def search(
 
 
 class _SimulationState(NamedTuple):
-  """The state for the simulation while loop."""
-  # rng_key: base.PRNGKey
+  """The state for the simulation while loop.
+
+  Unlike the jax version, the rng key is *not* a field here. Every field is
+  carried across iterations by a `tf.where` on `is_continuing`, which is shaped
+  `[B]`; a `[2]` key in the same structure would not broadcast. The key is
+  carried as a separate loop variable instead. (In mctx, `simulate` is vmapped
+  over the batch, so its key is per-element and this does not arise.)
+  """
   node_index: tf.Tensor  # int
   action: tf.Tensor  # int
   next_node_index: tf.Tensor  # int
@@ -204,7 +210,6 @@ def simulate(
     is_visited = next_node_index != tf.constant(tree_lib.UNVISITED)[..., None]
     is_continuing = tf.logical_and(is_visited, is_before_depth_cutoff)
     ret = _SimulationState(  # pytype: disable=wrong-arg-types  # jax-types
-        # rng_key=rng_key,
         node_index=node_index,
         action=action,
         next_node_index=next_node_index,
@@ -222,7 +227,6 @@ def simulate(
   depth = tf.zeros(batch_size, dtype=tree.children_prior_logits.dtype)
   # pytype: disable=wrong-arg-types  # jnp-type
   initial_state = _SimulationState(
-      # rng_key=rng_key,
       node_index=tf.fill([batch_size], tree_lib.NO_PARENT),
       action=tf.fill([batch_size], tree_lib.NO_PARENT),
       next_node_index=node_index,
