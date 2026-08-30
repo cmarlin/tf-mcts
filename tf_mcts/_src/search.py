@@ -141,8 +141,14 @@ def search(
 
 
 class _SimulationState(NamedTuple):
-  """The state for the simulation while loop."""
-  rng_key: base.PRNGKey
+  """The state for the simulation while loop.
+
+  Unlike the jax version, the rng key is *not* a field here. Every field is
+  carried across iterations by a `tf.where` on `is_continuing`, which is shaped
+  `[B]`; a `[2]` key in the same structure would not broadcast. The key is
+  carried as a separate loop variable instead. (In mctx, `simulate` is vmapped
+  over the batch, so its key is per-element and this does not arise.)
+  """
   node_index: tf.Tensor  # int
   action: tf.Tensor  # int
   next_node_index: tf.Tensor  # int
@@ -179,7 +185,7 @@ def simulate(
     # Preparing the next simulation state.
     node_index = state.next_node_index
     if int(tf.__version__.split('.')[1]) >= 12:
-      rng_key_ = tf.random.split(state.rng_key, 2)
+      rng_key_ = tf.random.split(rng_key, 2)
       rng_key, action_selection_key = rng_key_[0], rng_key_[1]
     else:
       rng_key, action_selection_key = tf.identity(rng_key), rng_key
@@ -203,14 +209,13 @@ def simulate(
     is_visited = next_node_index != tf.constant(tree_lib.UNVISITED)[..., None]
     is_continuing = tf.logical_and(is_visited, is_before_depth_cutoff)
     ret = _SimulationState(  # pytype: disable=wrong-arg-types  # jax-types
-        rng_key=rng_key,
         node_index=node_index,
         action=action,
         next_node_index=next_node_index,
         depth=depth,
         is_continuing=is_continuing)
     next_state = tf.nest.map_structure(
-      lambda t_true, t_false: tf.where(state.is_continuing, t_true, t_false) if tf.shape(t_true) == tf.shape(state.is_continuing) else t_true,
+      lambda t_true, t_false: tf.where(state.is_continuing, t_true, t_false),
       ret,
       state
       )
@@ -220,7 +225,6 @@ def simulate(
   node_index = tf.fill([batch_size], tree_lib.ROOT_INDEX)  # dtype=tf.int32
   depth = tf.zeros(batch_size, dtype=tree.children_prior_logits.dtype)
   initial_state = _SimulationState(
-      rng_key=rng_key,
       node_index=tf.fill([batch_size], tree_lib.NO_PARENT),
       action=tf.fill([batch_size], tree_lib.NO_PARENT),
       next_node_index=node_index,
