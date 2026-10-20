@@ -26,6 +26,8 @@ import numpy as np
 
 import mctx
 
+_TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "test_data")
+
 
 def _prepare_root(batch_size, num_actions):
   """Returns a root consistent with the stored expected trees."""
@@ -35,45 +37,48 @@ def _prepare_root(batch_size, num_actions):
   for i in range(1, batch_size):
     rng_keys.append(rng_key + i)
   embedding = tf.stack(rng_keys)
-  # output = tf.vectorized_map(
-  #     functools.partial(_produce_prediction_output, num_actions=num_actions),
-  #         embedding)
-  output = functools.partial(
-    _produce_prediction_output,
-    num_actions=num_actions
-    )(embedding)
+  output = _map_keys(
+      functools.partial(_produce_prediction_output, num_actions=num_actions),
+      embedding)
   return mctx.RootFnOutput(
       prior_logits=output["policy_logits"],
       value=output["value"],
       embedding=embedding,
   )
 
- # TODO: fix support for vectorized_map
+def _map_keys(fn, elems):
+  """Applies `fn` to each batch element, like `jax.vmap`.
+
+  `tf.vectorized_map` has no converter for the stateless random ops and
+  falls back to a while_loop anyway, warning on every trace.
+  """
+  return tf.map_fn(
+      fn, elems,
+      fn_output_signature=tf.nest.map_structure(
+          tf.TensorSpec.from_tensor,
+          fn(tf.nest.map_structure(lambda t: t[0], elems))))
+
+
 def _produce_prediction_output(rng_key, num_actions):
   """Producing the model output as in the stored expected trees."""
-  batch_size = tf.shape(rng_key)[0]
-
-  if int(tf.__version__.split(".")[1]) >= 12:
-    rng_key_ = tf.random.split(rng_key, 3)
-    policy_rng, value_rng, reward_rng = rng_key_[0], rng_key_[1], rng_key_[2]
-  else:
-    policy_rng, value_rng, reward_rng = rng_key[0], rng_key[0], rng_key[0]
+  rng_key_ = tf.random.split(rng_key, 3)
+  policy_rng, value_rng, reward_rng = rng_key_[0], rng_key_[1], rng_key_[2]
   del rng_key
   # Producing value from [-1, +1).
   value = tf.random.stateless_uniform(
-    shape=[batch_size],
+    shape=[],
     seed=value_rng,
     minval=-1.0,
     maxval=1.0)
   # Producing reward from [-1, +1).
   reward = tf.random.stateless_uniform(
-    shape=[batch_size],
+    shape=[],
     seed=reward_rng,
     minval=-1.0,
     maxval=1.0)
   return dict(
       policy_logits=tf.random.stateless_normal(
-        shape=[batch_size, num_actions],
+        shape=[num_actions],
         seed=policy_rng
         ),
       value=value,
@@ -87,22 +92,12 @@ def _prepare_recurrent_fn(num_actions, *, discount, zero_reward):
   def recurrent_fn(params, rng_key, action, embedding):
     del params, rng_key
     # The embeddings serve as rng_keys.
-    # embedding = tf.vectorized_map(
-    #     fn=functools.partial(_fold_action_in, num_actions=num_actions),
-    #     elems=(embedding, action),
-    #     fallback_to_while_loop=False)
-    embedding = functools.partial(_fold_action_in, num_actions=num_actions)(
-      (embedding, action))
-    # output = tf.vectorized_map(
-    #     functools.partial(
-    #       _produce_prediction_output,
-    #       num_actions=num_actions),
-    #         embedding)
-    output = functools.partial(
-      _produce_prediction_output,
-      num_actions=num_actions)(
-        embedding
-        )
+    embedding = _map_keys(
+        functools.partial(_fold_action_in, num_actions=num_actions),
+        (embedding, action))
+    output = _map_keys(
+        functools.partial(_produce_prediction_output, num_actions=num_actions),
+        embedding)
     reward = output["reward"]
     if zero_reward:
       reward = tf.zeros_like(reward)
@@ -119,15 +114,10 @@ def _prepare_recurrent_fn(num_actions, *, discount, zero_reward):
 def _fold_action_in(params, num_actions):
   """Returns a new rng key, selected by the given action."""
   rng_key, action = params
-  batch_size = tf.shape(rng_key)[0]
-  if tf.executing_eagerly():
-    tf.debugging.assert_equal(tf.shape(action), [batch_size])
+  tf.debugging.assert_rank(action, 0)
   tf.debugging.assert_type(action, tf.int32)
-  if int(tf.__version__.split(".")[1]) >= 12:
-    sub_rngs = tf.random.split(rng_key, num_actions)
-  else:
-    sub_rngs = tf.tile(rng_key[..., None, :], [1, num_actions, 1])
-  return tf.gather(sub_rngs, action, axis=1, batch_dims=1)
+  sub_rngs = tf.random.split(rng_key, num_actions)
+  return tf.gather(sub_rngs, action)
 
 
 def tree_to_pytree(tree: mctx.Tree, batch_i: int = 0):
@@ -184,14 +174,14 @@ def _round_float(value, ndigits=10):
 
 
 def assert_trees_all_close(tree_a, tree_b, rtol=1e-06, atol=0.0):
+  """Disabled: the expected trees in test_data come from the JAX mctx run.
+
+  They were drawn from JAX's PRNG, which TF's stateless RNG does not
+  reproduce, so the reproduced trees can never match. The JSON files and this
+  call are kept to stay close to the JAX code; `test_tree` only checks that
+  the search runs.
+  """
   # pylint: disable=unused-argument
-  #tf.nest.assert_same_structure(tree_a, tree_b)
-  # def _assert_tensor(t_a, t_b):
-  #   #atol + rtol * abs(desired)
-  #   tf.debugging.assert_less_equal(
-  # tf.math.abs(t_b - t_a),
-  # atol + rtol*tf.math.abs(t_b))
-  # tf.nest.map_structure(_assert_tensor, tree_a, tree_b)
   pass
 
 
@@ -205,13 +195,13 @@ class TreeTest(parameterized.TestCase):
   # pylint: disable=line-too-long
   @parameterized.named_parameters(
       ("muzero_norescale",
-       "../mctx/_src/tests/test_data/muzero_tree.json"),
+       os.path.join(_TEST_DATA_DIR, "muzero_tree.json")),
       ("muzero_qtransform",
-       "../mctx/_src/tests/test_data/muzero_qtransform_tree.json"),
+       os.path.join(_TEST_DATA_DIR, "muzero_qtransform_tree.json")),
       ("gumbel_muzero_norescale",
-       "../mctx/_src/tests/test_data/gumbel_muzero_tree.json"),
+       os.path.join(_TEST_DATA_DIR, "gumbel_muzero_tree.json")),
       ("gumbel_muzero_reward",
-       "../mctx/_src/tests/test_data/gumbel_muzero_reward_tree.json")
+       os.path.join(_TEST_DATA_DIR, "gumbel_muzero_reward_tree.json"))
       )
   # pylint: enable=line-too-long
   def test_tree(self, tree_data_path):

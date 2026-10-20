@@ -66,7 +66,7 @@ __all__ = (
 
 #  _________________________________________
 # / Please don't use symbols in `_src` they \
-# \ are not part of the Mctx public API.    /
+# \ are not part of the mctx public API.    /
 #  -----------------------------------------
 #         \   ^__^
 #          \  (oo)\_______

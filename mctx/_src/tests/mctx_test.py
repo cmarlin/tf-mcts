@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for Mctx."""
+"""Tests for TfMcts."""
 
 from absl.testing import absltest
 import mctx
 
 
-class MctxTest(absltest.TestCase):
+class TfMctsTest(absltest.TestCase):
   """Test mctx can be imported correctly."""
 
   def test_import(self):

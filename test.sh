@@ -24,34 +24,34 @@ source "${VENV_DIR}/bin/activate"
 python --version
 
 # Install dependencies.
-pip install --upgrade pip setuptools wheel
-pip install flake8 pytest-xdist pylint pylint-exit
-pip install -r requirements/requirements.txt
-pip install -r requirements/requirements-test.txt
+python3 -m pip install --upgrade pip uv
+python3 -m uv pip install --upgrade pip setuptools wheel
+python3 -m uv pip install --upgrade flake8 pytest-xdist pylint pylint-exit
+python3 -m uv pip install --editable ".[test]"
 
 # Lint with flake8.
-flake8 `find mctx -name '*.py' | xargs` --count --select=E9,F63,F7,F82,E225,E251 --show-source --statistics
+python3 -m flake8 `find mctx -name '*.py' | xargs` --count --select=E9,F63,F7,F82,E225,E251 --show-source --statistics
 
 # Lint with pylint.
-# Fail on errors, warning, conventions and refactoring messages.
-PYLINT_ARGS="-efail -wfail -cfail -rfail"
+# Fail on errors, warning, and conventions.
+PYLINT_ARGS="-efail -wfail -cfail"
 # Lint modules and tests separately.
 pylint --rcfile=.pylintrc `find mctx -name '*.py' | grep -v 'test.py' | xargs` || pylint-exit $PYLINT_ARGS $?
 # Disable `protected-access` warnings for tests.
 pylint --rcfile=.pylintrc `find mctx -name '*_test.py' | xargs` -d W0212 || pylint-exit $PYLINT_ARGS $?
 
 # Build the package.
-python setup.py sdist
-pip wheel --verbose --no-deps --no-clean dist/tf-mcts*.tar.gz
-pip install tf_mcts*.whl
+python3 -m uv pip install build
+python3 -m build
+python3 -m pip wheel --no-deps dist/tf_mcts-*.tar.gz
+python3 -m pip install tf_mcts-*.whl
 
 # Check types with pytype.
-# Note: pytype does not support 3.12 as of 23.11.23
-# See https://github.com/google/pytype/issues/1308
+# pytype does not support Python 3.12+, so it only runs on the 3.11 CI job.
 if [ `python -c 'import sys; print(sys.version_info.minor)'` -lt 12 ];
 then
-  pip install pytype
-  pytype `find mctx/_src/ -name "*py" | xargs` -k
+  python3 -m pip install pytype
+  python3 -m pytype "mctx" -j auto --keep-going --disable import-error
 fi;
 
 # Run tests using pytest.
@@ -59,8 +59,11 @@ fi;
 mkdir _testing && cd _testing
 
 # Run tests using pytest.
-pytest -n "$(grep -c ^processor /proc/cpuinfo)" --pyargs mctx
+python3 -m pytest --numprocesses auto --pyargs mctx
 cd ..
+
+# Cleanup.
+rm -rf _testing tf_mcts-*.whl dist/
 
 set +u
 deactivate

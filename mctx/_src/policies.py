@@ -17,7 +17,6 @@ import functools
 from typing import Optional, Tuple
 
 import tensorflow as tf  # type: ignore
-import tensorflow_probability as tfp  # type: ignore
 
 from mctx._src import action_selection
 from mctx._src import base
@@ -77,14 +76,9 @@ def muzero_policy(
     `PolicyOutput` containing the proposed action, action_weights and the used
     search tree.
   """
-  # available in tf 2.12 ?
-  if int(tf.__version__.split('.')[1]) >= 12:
-    rng_key_ = tf.random.split(rng_key, 3)
-    rng_key, dirichlet_rng_key, search_rng_key = \
-      rng_key_[0], rng_key_[1], rng_key_[2]
-  else:
-    rng_key, dirichlet_rng_key, search_rng_key = \
-      tf.identity(rng_key), rng_key, rng_key
+  rng_key_ = tf.random.split(rng_key, 3)
+  rng_key, dirichlet_rng_key, search_rng_key = \
+    rng_key_[0], rng_key_[1], rng_key_[2]
 
   # Adding Dirichlet noise.
   noisy_logits = _get_logits_from_probs(
@@ -195,14 +189,16 @@ def gumbel_muzero_policy(
       prior_logits=_mask_invalid_actions(root.prior_logits, invalid_actions))
 
   # Generating Gumbel.
-  if int(tf.__version__.split('.')[1]) >= 12:
-    rng_key_ = tf.random.split(rng_key, 2)
-    rng_key, gumbel_rng = rng_key_[0], rng_key_[1]
-  else:
-    rng_key, gumbel_rng = tf.identity(rng_key), rng_key
-  gumbel = tfp.distributions\
-  .Gumbel(loc=0.0, scale=gumbel_scale)\
-    .sample(root.prior_logits.shape, seed=gumbel_rng)
+  rng_key_ = tf.random.split(rng_key, 2)
+  rng_key, gumbel_rng = rng_key_[0], rng_key_[1]
+  # minval=tiny keeps log(-log(u)) finite.
+  uniform = tf.random.stateless_uniform(
+      tf.shape(root.prior_logits),
+      seed=gumbel_rng,
+      minval=tf.experimental.numpy.finfo(root.prior_logits.dtype).tiny,
+      maxval=1.0,
+      dtype=root.prior_logits.dtype)
+  gumbel = -gumbel_scale * tf.math.log(-tf.math.log(uniform))
 
   # Searching.
   extra_data = action_selection.GumbelMuZeroExtraData(root_gumbel=gumbel)
@@ -313,13 +309,9 @@ def stochastic_muzero_policy(
 
   num_actions = root.prior_logits.shape[-1]
 
-  if int(tf.__version__.split('.')[1]) >= 12:
-    rng_key_ = tf.random.split(rng_key, 3)
-    rng_key, dirichlet_rng_key, search_rng_key = \
-      rng_key_[0], rng_key_[1], rng_key_[2]
-  else:
-    rng_key, dirichlet_rng_key, search_rng_key = \
-        tf.identity(rng_key), rng_key, rng_key
+  rng_key_ = tf.random.split(rng_key, 3)
+  rng_key, dirichlet_rng_key, search_rng_key = \
+    rng_key_[0], rng_key_[1], rng_key_[2]
 
   # Adding Dirichlet noise.
   noisy_logits = _get_logits_from_probs(
@@ -437,16 +429,59 @@ def _add_dirichlet_noise(rng_key, probs, *, dirichlet_alpha,
 
   batch_size, num_actions = probs.shape
   # TODO: add adaptive dirichlet
-  distribution = tfp.distributions.Dirichlet(
-    concentration=tf.fill([num_actions], value=dirichlet_alpha)
-  )
-  noise = tf.cast(
-    distribution.sample(
-      batch_size,
-      seed=rng_key),
+  # A Dirichlet sample is a vector of Gamma samples, normalized.
+  log_gamma = _stateless_log_gamma(
+    [batch_size, num_actions],
+    seed=rng_key,
+    alpha=dirichlet_alpha,
     dtype=probs.dtype)
+  noise = tf.nn.softmax(log_gamma, axis=-1)
   noisy_probs = (1 - dirichlet_fraction) * probs + dirichlet_fraction * noise
   return noisy_probs
+
+
+def _stateless_log_gamma(shape, seed, alpha, dtype):
+  """Returns `log(x)` for `x ~ Gamma(alpha, 1)`, by Marsaglia-Tsang rejection.
+
+  `tf.random.stateless_gamma` has no XLA kernel, so it cannot run under
+  `jit_compile`. The result is in log space: for a small `alpha` the samples
+  underflow to 0, and normalizing them would divide by 0.
+  """
+  # Marsaglia-Tsang needs alpha >= 1: Gamma(alpha) = Gamma(alpha + 1) * U^(1/a).
+  boost = alpha < 1.0
+  a = alpha + 1.0 if boost else alpha
+  d = a - 1.0 / 3.0
+  c = 1.0 / (9.0 * d) ** 0.5
+  tiny = tf.experimental.numpy.finfo(dtype).tiny
+  seeds = tf.random.split(seed, 2)
+  loop_seed, boost_seed = seeds[0], seeds[1]
+
+  def cond(seed, log_sample, accepted):
+    del seed, log_sample
+    return tf.logical_not(tf.reduce_all(accepted))
+
+  def body(seed, log_sample, accepted):
+    seeds = tf.random.split(seed, 3)
+    seed, normal_seed, uniform_seed = seeds[0], seeds[1], seeds[2]
+    x = tf.random.stateless_normal(shape, seed=normal_seed, dtype=dtype)
+    v = (1.0 + c * x) ** 3
+    log_v = tf.math.log(tf.math.maximum(v, tiny))
+    u = tf.random.stateless_uniform(
+        shape, seed=uniform_seed, minval=tiny, maxval=1.0, dtype=dtype)
+    ok = tf.logical_and(
+        v > 0, tf.math.log(u) < 0.5 * x * x + d - d * v + d * log_v)
+    new = tf.logical_and(ok, tf.logical_not(accepted))
+    log_sample = tf.where(new, tf.math.log(d) + log_v, log_sample)
+    return seed, log_sample, tf.logical_or(accepted, ok)
+
+  _, log_sample, _ = tf.while_loop(
+      cond, body,
+      (loop_seed, tf.zeros(shape, dtype), tf.zeros(shape, tf.bool)))
+  if boost:
+    u = tf.random.stateless_uniform(
+        shape, seed=boost_seed, minval=tiny, maxval=1.0, dtype=dtype)
+    log_sample += tf.math.log(u) / alpha
+  return log_sample
 
 
 def _apply_temperature(logits, temperature):

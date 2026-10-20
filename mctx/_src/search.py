@@ -76,7 +76,6 @@ def search(
   )
 
   # Do simulation, expansion, and backward steps.
-  batch_size = root.value.shape[0]
   if max_depth is None:
     max_depth = num_simulations
   if invalid_actions is None:
@@ -84,20 +83,11 @@ def search(
 
   def body_fun(sim, loop_state):
     rng_key, tree = loop_state
-    if int(tf.__version__.split('.')[1]) >= 12:
-      rng_key_ = tf.random.split(rng_key, 3)
-      rng_key, simulate_key, expand_key = \
-        rng_key_[0], rng_key_[1], rng_key_[2]
-    else:
-      rng_key, simulate_key, expand_key = \
-        tf.identity(rng_key), rng_key, rng_key
-    # simulate is vmapped and expects batched rng keys.
-    # if int(tf.__version__.split('.')[1]) >= 12:
-    #   simulate_keys = tf.random.split(simulate_key, batch_size)
-    # else:
-    simulate_keys = simulate_key
+    rng_key_ = tf.random.split(rng_key, 3)
+    rng_key, simulate_key, expand_key = \
+      rng_key_[0], rng_key_[1], rng_key_[2]
     parent_index, action = simulate(
-        simulate_keys,
+        simulate_key,
         tree,
         action_selection_fn,
         max_depth
@@ -185,11 +175,8 @@ def simulate(
   def body_fun(rng_key, state):
     # Preparing the next simulation state.
     node_index = state.next_node_index
-    if int(tf.__version__.split('.')[1]) >= 12:
-      rng_key_ = tf.random.split(rng_key, 2)
-      rng_key, action_selection_key = rng_key_[0], rng_key_[1]
-    else:
-      rng_key, action_selection_key = tf.identity(rng_key), rng_key
+    rng_key_ = tf.random.split(rng_key, 2)
+    rng_key, action_selection_key = rng_key_[0], rng_key_[1]
 
     # mask to avoid access to invalid indices
     masked_node_index = tf.where(state.is_continuing, node_index, 0)
@@ -496,4 +483,3 @@ def instantiate_tree_from_root(
   tree = update_tree_node(
       tree, root_index, root.prior_logits, root.value, root.embedding)
   return tree
-  
